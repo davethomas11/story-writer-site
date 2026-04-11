@@ -18,7 +18,7 @@ if (!fs.existsSync(STORIES_DIR)) {
 }
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' })); // Increase limit for larger story contexts
 
 // API PING to verify server status
 app.get('/api/ping', (req, res) => {
@@ -76,8 +76,9 @@ app.post('/api/generate', async (req, res) => {
     }
 });
 
-// --- STORY MANAGEMENT ENDPOINTS ---
+// --- STORY MANAGEMENT ENDPOINTS (HYBRID STORAGE) ---
 
+// List all stories (metadata only)
 app.get('/api/stories', (req, res) => {
     try {
         const files = fs.readdirSync(STORIES_DIR);
@@ -95,17 +96,30 @@ app.get('/api/stories', (req, res) => {
     }
 });
 
+// Get a specific story (Merging JSON and MD)
 app.get('/api/stories/:id', (req, res) => {
     try {
-        const storyPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-        if (!fs.existsSync(storyPath)) return res.status(404).json({ error: 'Story not found' });
-        const data = fs.readFileSync(storyPath, 'utf8');
-        res.json(JSON.parse(data));
+        const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
+        const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+
+        if (!fs.existsSync(jsonPath)) return res.status(404).json({ error: 'Story not found' });
+        
+        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        
+        // Inject novel text from MD if it exists
+        if (fs.existsSync(mdPath)) {
+            data.novel = fs.readFileSync(mdPath, 'utf8');
+        } else {
+            data.novel = data.novel || ""; // Fallback
+        }
+
+        res.json(data);
     } catch (error) {
         res.status(500).json({ error: 'Failed to load story' });
     }
 });
 
+// Create a new story (Initializing both files)
 app.post('/api/stories', (req, res) => {
     try {
         const id = `story-${Date.now()}`;
@@ -114,39 +128,67 @@ app.post('/api/stories', (req, res) => {
             title: req.body.title || 'Untitled Adventure',
             createdAt: new Date().toISOString(),
             interactive: [],
-            messages: [], // Chat context
-            novel: "",
+            messages: [],
             currentMood: 'default',
             currentTheme: { bg: '#09090b', accent: '#52525b' }
         };
+        
+        // Write JSON (minus novel)
         fs.writeFileSync(path.join(STORIES_DIR, `${id}.json`), JSON.stringify(newStory, null, 2));
+        
+        // Write empty MD
+        fs.writeFileSync(path.join(STORIES_DIR, `${id}.md`), `# ${newStory.title}\n\n`);
+        
+        // Add back empty novel string for frontend consistency
+        newStory.novel = "";
         res.status(201).json(newStory);
     } catch (error) {
         res.status(500).json({ error: 'Failed to create story' });
     }
 });
 
+// Update an existing story (Splitting JSON and MD)
 app.put('/api/stories/:id', (req, res) => {
     try {
-        const storyPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-        if (!fs.existsSync(storyPath)) return res.status(404).json({ error: 'Story not found' });
-        fs.writeFileSync(storyPath, JSON.stringify(req.body, null, 2));
-        res.json(req.body);
+        const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
+        const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+
+        if (!fs.existsSync(jsonPath)) return res.status(404).json({ error: 'Story not found' });
+        
+        const fullData = req.body;
+        const novelContent = fullData.novel || "";
+        
+        // Extract structured data
+        const { novel, ...structuredData } = fullData;
+        
+        // Write Markdown file
+        fs.writeFileSync(mdPath, novelContent);
+        
+        // Write JSON file (without the long novel text)
+        fs.writeFileSync(jsonPath, JSON.stringify(structuredData, null, 2));
+        
+        res.json(fullData);
     } catch (error) {
         res.status(500).json({ error: 'Failed to update story' });
     }
 });
 
+// Delete a story (Cleanup both files)
 app.delete('/api/stories/:id', (req, res) => {
     try {
-        const storyPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-        if (fs.existsSync(storyPath)) fs.unlinkSync(storyPath);
+        const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
+        const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+
+        if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
+        if (fs.existsSync(mdPath)) fs.unlinkSync(mdPath);
+        
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete story' });
     }
 });
 
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 if (process.env.NODE_ENV !== 'test') {

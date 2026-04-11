@@ -164,7 +164,12 @@ export async function handleAction() {
 
             // Update UI live (only narrative part)
             if (!isMetadataMode) {
-                responseContent.innerHTML = narrativeText.split('\n\n').map(p => `<p>${p}</p>`).join('');
+                // Peek ahead: if the text contains the start of our separator, strip it for display
+                let displayable = narrativeText;
+                if (displayable.includes('###')) {
+                    displayable = displayable.split('###')[0].trim();
+                }
+                responseContent.innerHTML = displayable.split('\n\n').map(p => `<p>${p}</p>`).join('');
                 iContainer.scrollTo({ top: iContainer.scrollHeight, behavior: 'smooth' });
             }
         });
