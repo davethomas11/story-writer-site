@@ -1,0 +1,14 @@
+{
+  "name": "ai-story-game",
+  "version": "1.0.0",
+  "description": "Interactive AI Story Scribe with Local Ollama Support",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "cd server && npm run dev",
+    "test": "cd server && npm test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

@@ -1,42 +1,57 @@
-# The Void Echo: Interactive AI Story Scribe
+# AI Story Scribe: A Dynamic Interactive Narrative Engine
 
-A minimalist, deep-space thriller game powered by local AI. Experience the story in the first person while the game automatically novelizes your journey into a third-person book.
+A minimalist, distraction-free interactive storytelling platform powered by local AI. Experience your own custom adventures in the first person while the engine automatically novelizes your journey into a persistent third-person log.
 
-## Architecture
+## ✨ Features
 
--   **Frontend:** A modern, minimalist UI built with Tailwind CSS.
--   **Middleware:** A Node.js server that proxies requests to Ollama and manages file persistence.
--   **AI Core:** Powered by [Ollama](https://ollama.com/) (running `llama3` by default).
+-   **🎭 Dual-Narrative Engine:** Engage in an immersive 1st-person interactive story that simultaneously generates a 3rd-person literary novelization.
+-   **🔌 Dynamic Core Selection:** Automatically detects and lets you choose from any model installed in your local [Ollama](https://ollama.com/) instance (e.g., `llama3.2`, `mistral`, `qwen2.5-coder`).
+-   **📓 Persistent Adventure Logs:** Save your journey at any time to `novel.md` to review your adventure as a formal book.
+-   **🌑 Minimalist Aesthetic:** A clean, modern dark-themed UI built with Tailwind CSS, designed for deep focus and immersion.
+-   **🛠️ Robust Middleware:** A Node.js/Express backend that handles API orchestration, CORS management, and file persistence.
 
-## Prerequisites
+## 🚀 Getting Started
 
-1.  **Ollama:** Install Ollama and pull the model you wish to use (e.g., `ollama pull llama3`).
-2.  **Node.js:** Ensure you have Node.js installed on your machine.
+### Prerequisites
 
-## Setup
+1.  **Ollama:** Install Ollama and pull at least one model (e.g., `ollama pull llama3.2`).
+2.  **Node.js:** Ensure you have Node.js (v18+) installed.
 
-1.  **Start the Middleware Server:**
+### Setup & Launch
+
+1.  **Install Dependencies:**
     ```bash
     cd server
     npm install
-    node index.js
     ```
-    The server will run on `http://localhost:3000`.
 
-2.  **Launch the Game:**
-    Open `index.html` in your favorite web browser.
+2.  **Start the Engine:**
+    From the root directory:
+    ```bash
+    npm start
+    ```
+    
+    *For development (includes automatic server restart on code changes):*
+    ```bash
+    npm run dev
+    ```
 
-## How to Play
+3.  **Open the Scribe:**
+    Navigate to `http://localhost:3000` in your browser.
 
-1.  **Interact:** Type your actions into the input box at the bottom (e.g., "Look for a way out," "Check the terminal").
-2.  **Immerse:** The AI will respond in the first person, continuing your story.
-3.  **Persist:** Click "Persist to Log" to save the third-person novelization of your adventure to `novel.md`.
+## 📖 How to Play
 
-## Development
+1.  **Initialize:** Select your preferred AI model from the "Core" dropdown.
+2.  **Interact:** Type your first action or a story prompt (e.g., *"I wake up in a field of neon flowers"*) to begin.
+3.  **Persist:** Click "Persist to Log" to save your current adventure to `novel.md`.
 
-### Running Tests
+## 🧪 Development
+
+### Unit Testing
+The middleware includes a suite of tests to ensure API stability:
 ```bash
-cd server
 npm test
 ```
-*(Note: Requires `jest` and `supertest` to be installed in the server directory)*
+
+---
+*Built for local-first AI enthusiasts and storytellers.*

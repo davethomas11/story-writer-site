@@ -12,23 +12,41 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .loading { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        
+        /* Custom Select styling */
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2352525b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 1rem;
+        }
     </style>
 </head>
 <body class="bg-zinc-950 text-zinc-300 min-h-screen flex flex-col items-center justify-center p-6 sm:p-12 selection:bg-zinc-800 selection:text-white">
 
     <div id="story-container" class="max-w-2xl w-full space-y-8">
         <header class="flex justify-between items-start mb-12">
-            <div class="space-y-2 border-l-2 border-zinc-800 pl-6">
-                <h1 class="text-xs uppercase tracking-[0.3em] text-zinc-500 font-semibold">Status: Online</h1>
-                <h2 class="text-xl font-light text-zinc-100 tracking-tight">Session: New Adventure</h2>
+            <div class="space-y-4 border-l-2 border-zinc-800 pl-6">
+                <div class="space-y-1">
+                    <h1 class="text-xs uppercase tracking-[0.3em] text-zinc-500 font-semibold">Status: <span id="connection-status" class="text-zinc-400">Syncing...</span></h1>
+                    <h2 class="text-xl font-light text-zinc-100 tracking-tight">Session: New Adventure</h2>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <label for="model-select" class="text-[10px] uppercase tracking-widest text-zinc-600">Core:</label>
+                    <select id="model-select" class="bg-transparent border border-zinc-900 rounded px-2 py-1 text-[10px] uppercase tracking-widest text-zinc-400 focus:outline-none focus:border-zinc-700 transition-colors cursor-pointer pr-8 min-w-[120px]">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
             </div>
+            
             <button id="save-btn" onclick="saveNovel()" class="text-[10px] uppercase tracking-widest text-zinc-600 hover:text-zinc-300 transition-colors border border-zinc-900 px-3 py-1 rounded">
                 Persist to Log
             </button>
         </header>
 
         <main id="narrative-container" class="space-y-6 text-lg leading-relaxed font-light min-h-[300px]">
-            <!-- Narrative will be injected here -->
             <div class="fade-in text-zinc-500 italic">
                 Type your first action to begin your story...
             </div>
@@ -48,20 +66,63 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:3000/api';
-        const MODEL = 'llama3'; // Default model, update as needed
+        const API_BASE = '/api';
         let thirdPersonSession = "";
         let firstTurn = true;
+        let selectedModel = '';
+
+        // Initialize models on load
+        window.addEventListener('DOMContentLoaded', fetchModels);
+
+        async function fetchModels() {
+            const select = document.getElementById('model-select');
+            const status = document.getElementById('connection-status');
+            
+            try {
+                const res = await fetch(`${API_BASE}/models`);
+                if (!res.ok) throw new Error('Failed to fetch models');
+                
+                const data = await res.json();
+                const models = data.models || [];
+                
+                select.innerHTML = '';
+                
+                if (models.length === 0) {
+                    select.innerHTML = '<option value="">No models found</option>';
+                    status.textContent = 'ERROR';
+                    status.classList.add('text-red-900');
+                    return;
+                }
+
+                models.forEach((m, index) => {
+                    const option = document.createElement('option');
+                    option.value = m.name;
+                    option.textContent = m.name;
+                    option.className = 'bg-zinc-950 text-zinc-300';
+                    select.appendChild(option);
+                    
+                    if (index === 0) selectedModel = m.name;
+                });
+
+                select.addEventListener('change', (e) => {
+                    selectedModel = e.target.value;
+                });
+
+                status.textContent = 'Ready';
+                status.classList.remove('text-zinc-400');
+                status.classList.add('text-emerald-900');
+            } catch (err) {
+                console.error('Core failure:', err);
+                select.innerHTML = '<option value="">Offline</option>';
+                status.textContent = 'Offline';
+                status.classList.add('text-red-900');
+            }
+        }
 
         async function handleAction() {
             const input = document.getElementById('user-action');
             const action = input.value.trim();
-            if (!action) return;
-
-            if (firstTurn) {
-                document.getElementById('narrative-container').innerHTML = '';
-                firstTurn = false;
-            }
+            if (!action || !selectedModel) return;
 
             input.value = '';
             updateStatus('Thinking...');
@@ -70,17 +131,28 @@
                 // 1. Generate 1st Person Narrative for UI
                 const firstPersonPrompt = `You are an immersive storyteller. Respond to this action in the FIRST PERSON: "${action}". Continue the story based on this prompt. Keep it concise, atmospheric, and under 3 paragraphs.`;
                 const fpResponse = await callGenerate(firstPersonPrompt);
+                
+                if (!fpResponse) {
+                    throw new Error('Empty response from core');
+                }
+
+                if (firstTurn) {
+                    document.getElementById('narrative-container').innerHTML = '';
+                    firstTurn = false;
+                }
                 appendNarrative(fpResponse);
 
                 // 2. Generate 3rd Person Novelization for persistence
                 const thirdPersonPrompt = `Novelize the following event in a formal, third-person literary style: "${action}". Result: ${fpResponse}. Keep it atmospheric.`;
                 const tpResponse = await callGenerate(thirdPersonPrompt);
-                thirdPersonSession += `\n\n${tpResponse}`;
+                if (tpResponse) {
+                    thirdPersonSession += `\n\n${tpResponse}`;
+                }
 
                 updateStatus('');
             } catch (err) {
-                console.error(err);
-                updateStatus('ERROR: LINK FAILURE');
+                console.error('Action failure:', err);
+                updateStatus('SYSTEM ERROR: ' + err.message);
             }
         }
 
@@ -88,8 +160,14 @@
             const res = await fetch(`${API_BASE}/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: MODEL, prompt })
+                body: JSON.stringify({ model: selectedModel, prompt })
             });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(errorData.details || errorData.error || `Server responded with ${res.status}`);
+            }
+
             const data = await res.json();
             return data.response;
         }
