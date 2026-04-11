@@ -5,213 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Story Scribe | Interactive Adventure</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .fade-in { animation: fadeIn 0.8s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .loading { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-        
-        /* Custom Select styling */
-        select {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2352525b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 0.5rem center;
-            background-size: 1rem;
-        }
-    </style>
+    <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-zinc-950 text-zinc-300 min-h-screen flex flex-col items-center justify-center p-6 sm:p-12 selection:bg-zinc-800 selection:text-white">
+<body class="text-zinc-300 min-h-screen flex selection:bg-zinc-800 selection:text-white overflow-hidden">
 
-    <div id="story-container" class="max-w-2xl w-full space-y-8">
-        <header class="flex justify-between items-start mb-12">
-            <div class="space-y-4 border-l-2 border-zinc-800 pl-6">
+    <!-- Library Sidebar -->
+    <aside id="library-sidebar" class="fixed inset-y-0 left-0 w-72 bg-zinc-950 border-r border-zinc-900 z-50 flex flex-col">
+        <div class="p-6 border-b border-zinc-900 flex justify-between items-center">
+            <h2 class="text-xs uppercase tracking-[0.2em] text-zinc-500 font-semibold">Library</h2>
+            <button onclick="app.toggleLibrary(event)" class="text-zinc-600 hover:text-zinc-300">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="p-4">
+            <button onclick="app.createNewStory()" class="w-full text-[10px] uppercase tracking-widest border border-zinc-800 py-3 hover:bg-zinc-900 transition-colors">
+                + New Adventure
+            </button>
+        </div>
+        <div id="story-list" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2"></div>
+    </aside>
+
+    <!-- Main Content -->
+    <div id="main-container" onclick="app.closeLibrary()" class="flex-1 flex flex-col min-w-0 h-screen relative">
+        
+        <!-- Header -->
+        <header class="p-6 border-b border-zinc-900 flex justify-between items-center bg-zinc-950/50 backdrop-blur-md z-40">
+            <div class="flex items-center gap-6">
+                <button onclick="app.toggleLibrary(event)" class="text-zinc-500 hover:text-zinc-100 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
                 <div class="space-y-1">
-                    <h1 class="text-xs uppercase tracking-[0.3em] text-zinc-500 font-semibold">Status: <span id="connection-status" class="text-zinc-400">Syncing...</span></h1>
-                    <h2 class="text-xl font-light text-zinc-100 tracking-tight">Session: New Adventure</h2>
-                </div>
-                
-                <div class="flex items-center gap-3">
-                    <label for="model-select" class="text-[10px] uppercase tracking-widest text-zinc-600">Core:</label>
-                    <select id="model-select" class="bg-transparent border border-zinc-900 rounded px-2 py-1 text-[10px] uppercase tracking-widest text-zinc-400 focus:outline-none focus:border-zinc-700 transition-colors cursor-pointer pr-8 min-w-[120px]">
-                        <option value="">Loading...</option>
-                    </select>
+                    <h1 id="current-story-title" class="text-lg font-light text-zinc-100 tracking-tight">Select a Story</h1>
+                    <div class="flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-zinc-600">
+                        <span>Core:</span>
+                        <select id="model-select" class="bg-transparent border-none p-0 focus:outline-none cursor-pointer pr-4"></select>
+                        <span id="connection-status">• Offline</span>
+                    </div>
                 </div>
             </div>
-            
-            <button id="save-btn" onclick="saveNovel()" class="text-[10px] uppercase tracking-widest text-zinc-600 hover:text-zinc-300 transition-colors border border-zinc-900 px-3 py-1 rounded">
-                Persist to Log
-            </button>
+
+            <nav class="flex gap-8 text-[10px] uppercase tracking-[0.2em] font-semibold">
+                <button id="tab-interactive" onclick="app.switchTab('interactive')" class="pb-2 tab-active transition-all">Interactive</button>
+                <button id="tab-novel" onclick="app.switchTab('novel')" class="pb-2 text-zinc-600 hover:text-zinc-400 transition-all">The Novel</button>
+            </nav>
         </header>
 
-        <main id="narrative-container" class="space-y-6 text-lg leading-relaxed font-light min-h-[300px]">
-            <div class="fade-in text-zinc-500 italic">
-                Type your first action to begin your story...
-            </div>
-        </main>
+        <!-- Viewports -->
+        <main class="flex-1 overflow-hidden relative">
+            
+            <!-- Interactive View -->
+            <section id="view-interactive" class="h-full flex flex-col p-6 sm:p-12">
+                <div id="interactive-content" class="flex-1 overflow-y-auto custom-scrollbar space-y-8 max-w-2xl mx-auto w-full pb-12">
+                    <div class="text-zinc-600 italic text-center pt-24">Select a story from the library or create a new one to begin.</div>
+                </div>
+                
+                <footer class="max-w-2xl mx-auto w-full pt-6 space-y-4">
+                    <div id="input-area" class="flex gap-4 opacity-50 pointer-events-none">
+                        <input type="text" id="user-action" placeholder="What do you do?" 
+                            class="bg-transparent border-b border-zinc-900 w-full py-2 focus:outline-none focus:border-zinc-500 transition-colors font-light text-zinc-100"
+                            onkeypress="if(event.key === 'Enter') app.handleAction()">
+                        <button onclick="app.handleAction()" class="text-[10px] border border-zinc-800 px-6 py-2 hover:bg-zinc-900 hover:text-zinc-100 transition-all duration-300 tracking-wider uppercase whitespace-nowrap">
+                            Proceed
+                        </button>
+                    </div>
+                    <p id="status-msg" class="text-[10px] uppercase tracking-widest text-zinc-700 h-4 text-center"></p>
+                </footer>
+            </section>
 
-        <footer id="actions" class="pt-12 space-y-4">
-            <div id="input-area" class="flex gap-4">
-                <input type="text" id="user-action" placeholder="What do you do?" 
-                    class="bg-transparent border-b border-zinc-800 w-full py-2 focus:outline-none focus:border-zinc-500 transition-colors font-light text-zinc-100"
-                    onkeypress="if(event.key === 'Enter') handleAction()">
-                <button onclick="handleAction()" class="text-xs border border-zinc-800 px-6 py-2 hover:bg-zinc-900 hover:text-zinc-100 transition-all duration-300 tracking-wider uppercase whitespace-nowrap">
-                    Proceed
-                </button>
-            </div>
-            <p id="status-msg" class="text-[10px] uppercase tracking-widest text-zinc-600 h-4"></p>
-        </footer>
+            <!-- Novel View -->
+            <section id="view-novel" class="h-full hidden flex flex-col bg-zinc-950">
+                <div class="flex justify-center p-4 border-b border-zinc-900/50 gap-2">
+                    <button id="btn-1st-person" onclick="app.switchNovelPerspective('1st')" class="text-[9px] uppercase tracking-widest px-4 py-1.5 rounded border border-transparent text-zinc-600 hover:text-zinc-400 transition-all">1st Person</button>
+                    <button id="btn-3rd-person" onclick="app.switchNovelPerspective('3rd')" class="text-[9px] uppercase tracking-widest px-4 py-1.5 rounded border border-transparent perspective-active transition-all">3rd Person</button>
+                </div>
+                <div id="novel-content" class="flex-1 overflow-y-auto custom-scrollbar p-6 sm:p-12">
+                    <div id="novel-body" class="max-w-2xl mx-auto w-full prose prose-invert prose-zinc font-light leading-relaxed text-lg pb-24"></div>
+                </div>
+            </section>
+
+        </main>
     </div>
 
-    <script>
-        const API_BASE = '/api';
-        let thirdPersonSession = "";
-        let firstTurn = true;
-        let selectedModel = '';
-
-        // Initialize models on load
-        window.addEventListener('DOMContentLoaded', fetchModels);
-
-        async function fetchModels() {
-            const select = document.getElementById('model-select');
-            const status = document.getElementById('connection-status');
-            
-            try {
-                const res = await fetch(`${API_BASE}/models`);
-                if (!res.ok) throw new Error('Failed to fetch models');
-                
-                const data = await res.json();
-                const models = data.models || [];
-                
-                select.innerHTML = '';
-                
-                if (models.length === 0) {
-                    select.innerHTML = '<option value="">No models found</option>';
-                    status.textContent = 'ERROR';
-                    status.classList.add('text-red-900');
-                    return;
-                }
-
-                models.forEach((m, index) => {
-                    const option = document.createElement('option');
-                    option.value = m.name;
-                    option.textContent = m.name;
-                    option.className = 'bg-zinc-950 text-zinc-300';
-                    select.appendChild(option);
-                    
-                    if (index === 0) selectedModel = m.name;
-                });
-
-                select.addEventListener('change', (e) => {
-                    selectedModel = e.target.value;
-                });
-
-                status.textContent = 'Ready';
-                status.classList.remove('text-zinc-400');
-                status.classList.add('text-emerald-900');
-            } catch (err) {
-                console.error('Core failure:', err);
-                select.innerHTML = '<option value="">Offline</option>';
-                status.textContent = 'Offline';
-                status.classList.add('text-red-900');
-            }
-        }
-
-        async function handleAction() {
-            const input = document.getElementById('user-action');
-            const action = input.value.trim();
-            if (!action || !selectedModel) return;
-
-            input.value = '';
-            updateStatus('Thinking...');
-            
-            try {
-                // 1. Generate 1st Person Narrative for UI
-                const firstPersonPrompt = `You are an immersive storyteller. Respond to this action in the FIRST PERSON: "${action}". Continue the story based on this prompt. Keep it concise, atmospheric, and under 3 paragraphs.`;
-                const fpResponse = await callGenerate(firstPersonPrompt);
-                
-                if (!fpResponse) {
-                    throw new Error('Empty response from core');
-                }
-
-                if (firstTurn) {
-                    document.getElementById('narrative-container').innerHTML = '';
-                    firstTurn = false;
-                }
-                appendNarrative(fpResponse);
-
-                // 2. Generate 3rd Person Novelization for persistence
-                const thirdPersonPrompt = `Novelize the following event in a formal, third-person literary style: "${action}". Result: ${fpResponse}. Keep it atmospheric.`;
-                const tpResponse = await callGenerate(thirdPersonPrompt);
-                if (tpResponse) {
-                    thirdPersonSession += `\n\n${tpResponse}`;
-                }
-
-                updateStatus('');
-            } catch (err) {
-                console.error('Action failure:', err);
-                updateStatus('SYSTEM ERROR: ' + err.message);
-            }
-        }
-
-        async function callGenerate(prompt) {
-            const res = await fetch(`${API_BASE}/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: selectedModel, prompt })
-            });
-
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(errorData.details || errorData.error || `Server responded with ${res.status}`);
-            }
-
-            const data = await res.json();
-            return data.response;
-        }
-
-        function appendNarrative(text) {
-            const container = document.getElementById('narrative-container');
-            const div = document.createElement('div');
-            div.className = 'fade-in space-y-4 mt-8 pt-8 border-t border-zinc-900/50';
-            
-            const paragraphs = text.split('\n\n');
-            paragraphs.forEach(p => {
-                const el = document.createElement('p');
-                el.textContent = p;
-                div.appendChild(el);
-            });
-            
-            container.appendChild(div);
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-        }
-
-        async function saveNovel() {
-            if (!thirdPersonSession) {
-                updateStatus('NO NEW LOGS');
-                return;
-            }
-            
-            updateStatus('PERSISTING...');
-            try {
-                await fetch(`${API_BASE}/save-novel`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: thirdPersonSession })
-                });
-                thirdPersonSession = "";
-                updateStatus('LOG SECURED');
-                setTimeout(() => updateStatus(''), 2000);
-            } catch (err) {
-                updateStatus('PERSISTENCE FAILURE');
-            }
-        }
-
-        function updateStatus(msg) {
-            document.getElementById('status-msg').textContent = msg;
-        }
-    </script>
+    <!-- Scripts -->
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>
