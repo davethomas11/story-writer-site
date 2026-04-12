@@ -5,12 +5,14 @@ A minimalist, distraction-free interactive storytelling platform powered by loca
 ## ✨ Features
 
 -   **🎭 Dual-Narrative Engine:** Engage in an immersive 1st-person interactive story that simultaneously generates a 3rd-person literary novelization.
--   **🌊 Real-Time Streaming:** Watch your story unfold word-by-word as the AI generates it, providing an "instant" and fluid narrative experience.
--   **🧠 Deep Conversation Context:** Powered by Ollama's Chat API, the engine maintains a full history of your adventure, allowing for complex plot points and consistent world-building.
--   **🎨 Dynamic Mood Orchestration:** The UI automatically shifts its background, accent colors, and CSS filters (hue/saturation) to match the current atmospheric mood of the story.
--   **🔌 Dynamic Core Selection:** Automatically detects and lets you choose from any model installed in your local [Ollama](https://ollama.com/) instance.
--   **📚 Story Library:** Manage multiple adventures with full CRUD support. Start new journeys, switch between existing ones, or delete old logs.
--   **🏗️ Modular Architecture:** A clean, professional codebase with concerns separated into dedicated CSS and JS modules for easy maintenance and scalability.
+-   **🤝 Real-Time Collaboration:** Powered by WebSockets (Socket.io), multiple users can explore the same story together. See what others are typing and watch AI responses stream across all devices simultaneously.
+-   **👤 Persistent Explorer Profiles:** Create your unique explorer identity. Usernames and IDs are persisted both on the server and locally, ensuring you're recognized across sessions.
+-   **📍 Presence & Activity Tracking:** See who else is online and which adventure they are currently exploring with real-time indicators and a detailed "Active Explorers" modal.
+-   **⌨️ Narrative Turn Locking:** Animated typing indicators prevent narrative collisions by showing who is currently "directing" the story and temporarily locking input for others.
+-   **🌊 Real-Time Streaming:** Watch your story unfold word-by-word as the AI generates it, mirrored instantly to all connected explorers.
+-   **🎨 Surface & Layer Design System:** A robust high-contrast UI that automatically shifts backgrounds and accents to match the story's mood while maintaining perfect readability.
+-   **🔗 Deep Linking:** Story and tab states are synced to the URL, allowing for easy sharing and persistence across page refreshes.
+-   **🏗️ Refactored Modular Architecture:** Clean separation of concerns with dedicated modules for API communication, WebSocket logic, UI orchestration, and story state management.
 
 ## 🚀 Getting Started
 
@@ -43,18 +45,19 @@ A minimalist, distraction-free interactive storytelling platform powered by loca
 
 ## 📖 How to Play
 
-1.  **Initialize:** Select your preferred AI model from the "Core" dropdown.
-2.  **Library:** Use the sidebar (top-left icon) to create a new adventure or select an existing one.
-3.  **Interact:** Type your actions to begin. The UI will stream the response and update the mood dynamically.
-4.  **The Novel:** Switch to "The Novel" tab to read your entire adventure as a continuous story, with both 1st and 3rd-person perspective views.
+1.  **Identity:** Click the **Profile** button in the header to set your Explorer name.
+2.  **Initialize:** Select your preferred AI model from the "Core" dropdown.
+3.  **Library:** Use the sidebar (top-left icon) to create a new adventure, select an existing one, or rename your journey.
+4.  **Collaboration:** See the "Online" indicator in the header to view other active users and the stories they are reading.
+5.  **Interact:** Type your actions. If another user is already typing, your input will be temporarily locked to maintain narrative flow.
+6.  **The Novel:** Switch to "The Novel" tab to read your journey as a continuous literary work.
 
-## 🧪 Development
+## 🛠️ Architecture
 
-### Unit Testing
-The middleware includes a suite of tests to ensure API stability:
-```bash
-npm test
-```
+-   **Frontend:** Vanilla JS (ES Modules), Tailwind CSS, Socket.io Client.
+-   **Backend:** Node.js, Express 5, Socket.io Server.
+-   **AI Core:** Local Ollama instance (required).
+-   **Persistence:** Hybrid JSON/Markdown storage for stories; JSON for user profiles.
 
 ---
-*Built for local-first AI enthusiasts and storytellers.*
+*Built for local-first AI enthusiasts and collaborative storytellers.*
