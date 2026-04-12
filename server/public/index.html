@@ -9,8 +9,11 @@
 </head>
 <body class="text-zinc-300 min-h-screen flex selection:bg-zinc-800 selection:text-white overflow-hidden">
 
-    <!-- Library Sidebar -->
+    <div id="sidebar-overlay" onclick="app.toggleLibrary(); app.togglePresence(false);"></div>
+
+    <!-- Library Sidebar (Left) -->
     <aside id="library-sidebar" class="fixed inset-y-0 left-0 w-72 bg-zinc-950 border-r border-zinc-900 z-50 flex flex-col">
+        <!-- ... existing content ... -->
         <div class="p-6 border-b border-zinc-900 flex justify-between items-center">
             <h2 class="text-xs uppercase tracking-[0.2em] text-zinc-500 font-semibold">Library</h2>
             <button onclick="app.toggleLibrary(event)" class="text-zinc-600 hover:text-zinc-300">
@@ -25,30 +28,77 @@
         <div id="story-list" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2"></div>
     </aside>
 
+    <!-- Presence Sidebar (Right) -->
+    <aside id="presence-sidebar" class="fixed inset-y-0 right-0 w-72 bg-zinc-950 border-l border-zinc-900 z-50 flex flex-col">
+        <div class="p-6 border-b border-zinc-900 flex justify-between items-center">
+            <h2 class="text-xs uppercase tracking-[0.2em] text-zinc-500 font-semibold">Explorers Here</h2>
+            <button onclick="app.togglePresence(false)" class="text-zinc-600 hover:text-zinc-300">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div id="presence-drawer-content" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+            <!-- Populated via JS -->
+        </div>
+    </aside>
+
+    <!-- Mobile Presence Toggle -->
+    <button id="presence-toggle" onclick="app.togglePresence(true)" title="See who is here">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+    </button>
+
     <!-- Main Content -->
     <div id="main-container" onclick="app.closeLibrary()" class="flex-1 flex flex-col min-w-0 h-screen relative">
         
         <!-- Header -->
-        <header class="p-6 border-b border-zinc-900 flex justify-between items-center bg-zinc-950/50 backdrop-blur-md z-40">
-            <div class="flex items-center gap-6">
-                <button onclick="app.toggleLibrary(event)" class="text-zinc-500 hover:text-zinc-100 transition-colors">
+        <header class="p-4 md:p-6 border-b border-zinc-900 flex flex-col md:flex-row md:justify-between items-center bg-zinc-950/50 backdrop-blur-md z-40 gap-4">
+            <div class="flex items-center gap-4 md:gap-6 w-full md:w-auto">
+                <button onclick="app.toggleLibrary(event)" class="text-zinc-500 hover:text-zinc-100 transition-colors flex-shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                 </button>
-                <div class="space-y-1">
-                    <h1 id="current-story-title" class="text-lg font-light text-zinc-100 tracking-tight">Select a Story</h1>
-                    <div class="flex items-center gap-4 text-[10px] uppercase tracking-[0.2em] text-zinc-600">
-                        <span>Core:</span>
-                        <select id="model-select" class="bg-transparent border-none p-0 focus:outline-none cursor-pointer pr-4"></select>
-                        <span id="connection-status">• Offline</span>
+                <div class="space-y-1 min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h1 id="current-story-title" class="text-lg font-light text-zinc-100 tracking-tight truncate">Select a Story</h1>
+                        <button id="btn-rename-story" onclick="app.renameStory()" class="text-zinc-600 hover:text-zinc-300 transition-colors hidden" title="Rename Adventure">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                        <div id="current-readers" class="text-[9px] text-emerald-500/80 font-medium uppercase tracking-widest px-2 py-0.5 rounded bg-emerald-500/5 hidden whitespace-nowrap"></div>
+                    </div>
+                    <div class="flex items-center gap-2 md:gap-4 text-[10px] uppercase tracking-[0.1em] md:tracking-[0.2em] text-zinc-600 mobile-wrap">
+                        <span id="user-name-display" class="text-zinc-400 font-semibold border-r border-zinc-800 pr-2 md:pr-4 whitespace-nowrap">Explorer</span>
+                        <div class="flex items-center gap-2 whitespace-nowrap">
+                            <span>Core:</span>
+                            <select id="model-select" class="bg-transparent border-none p-0 focus:outline-none cursor-pointer pr-4 max-w-[100px] truncate"></select>
+                        </div>
+                        <span id="connection-status" class="whitespace-nowrap">• Offline</span>
+                        <button id="btn-profile" onclick="app.editProfile()" class="hover:text-zinc-300 transition-colors whitespace-nowrap">Profile</button>
+                        <button id="btn-presence-modal" onclick="app.togglePresenceModal(true)" class="flex gap-1 items-center border-l border-zinc-800 pl-2 md:pl-3 hover:text-zinc-300 transition-colors">
+                            <span id="presence-count-text" class="text-[9px] font-bold uppercase tracking-widest text-emerald-500">0 Online</span>
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <nav class="flex gap-8 text-[10px] uppercase tracking-[0.2em] font-semibold">
-                <button id="tab-interactive" onclick="app.switchTab('interactive')" class="pb-2 tab-active transition-all">Interactive</button>
-                <button id="tab-novel" onclick="app.switchTab('novel')" class="pb-2 text-zinc-600 hover:text-zinc-400 transition-all">The Novel</button>
+            <nav class="flex gap-4 text-[10px] uppercase tracking-[0.2em] font-semibold">
+                <button id="tab-interactive" onclick="app.switchTab('interactive')" class="pb-2 tab-active transition-all whitespace-nowrap">Interactive</button>
+                <button id="tab-novel" onclick="app.switchTab('novel')" class="pb-2 text-zinc-600 hover:text-zinc-400 transition-all whitespace-nowrap">The Novel</button>
             </nav>
         </header>
+
+        <!-- Presence Modal -->
+        <div id="presence-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+            <div class="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm" onclick="app.togglePresenceModal(false)"></div>
+            <div class="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-lg shadow-2xl overflow-hidden relative z-10">
+                <div class="p-6 border-b border-zinc-800 flex justify-between items-center">
+                    <h2 class="text-xs uppercase tracking-widest text-zinc-400 font-bold">Active Explorers</h2>
+                    <button onclick="app.togglePresenceModal(false)" class="text-zinc-500 hover:text-white">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div id="presence-modal-list" class="max-h-[60vh] overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
 
         <!-- Viewports -->
         <main class="flex-1 overflow-hidden relative">
@@ -56,10 +106,23 @@
             <!-- Interactive View -->
             <section id="view-interactive" class="h-full flex flex-col p-6 sm:p-12">
                 <div id="interactive-content" class="flex-1 overflow-y-auto custom-scrollbar space-y-8 max-w-2xl mx-auto w-full pb-12">
-                    <div class="text-zinc-600 italic text-center pt-24">Select a story from the library or create a new one to begin.</div>
+                    <div class="text-zinc-600 italic text-center pt-24">
+                        Select a story from the library or create a new one to begin.<br /><br />
+                        <button onclick="app.createNewStory()" class="text-[10px] uppercase tracking-widest border border-zinc-800 px-4 py-2 hover:bg-zinc-900 transition-colors">
+                        + New Adventure
+                        </button>
+                    </div>
                 </div>
                 
                 <footer class="max-w-2xl mx-auto w-full pt-6 space-y-4">
+                    <div id="typing-indicator" class="text-[10px] uppercase tracking-widest text-emerald-500 h-4 flex items-center gap-2 opacity-0 transition-opacity duration-300">
+                        <span id="typing-text"></span>
+                        <div class="flex gap-1">
+                            <span class="w-1 h-1 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0s"></span>
+                            <span class="w-1 h-1 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+                            <span class="w-1 h-1 bg-emerald-500 rounded-full animate-bounce" style="animation-delay: 0.4s"></span>
+                        </div>
+                    </div>
                     <div id="input-area" class="flex gap-4 opacity-50 pointer-events-none">
                         <input type="text" id="user-action" placeholder="What do you do?" 
                             class="bg-transparent border-b border-zinc-900 w-full py-2 focus:outline-none focus:border-zinc-500 transition-colors font-light text-zinc-100"
@@ -87,6 +150,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 </html>

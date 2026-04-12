@@ -13,3 +13,4 @@ coverage/
 *.sln
 *.sw?
 server/stories/
+server/users/

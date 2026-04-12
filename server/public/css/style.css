@@ -1,43 +1,215 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
-
 :root {
-    --accent-color: #52525b;
-    --bg-color: #09090b;
+    /* Base System */
+    --bg-base: #09090b;
+    --bg-surface: rgba(9, 9, 11, 0.7);
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-dim: #52525b;
+    --accent: #52525b;
+    --accent-glow: rgba(82, 82, 91, 0.3);
+    
+    --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+    --line-height-prose: 1.8;
 }
 
-body { 
-    font-family: 'Inter', sans-serif; 
-    background-color: var(--bg-color);
-    transition: background-color 1000ms ease, color 1000ms ease;
+/* Mood Definitions - Design Patterns */
+.mood-default {
+    --bg-base: #09090b;
+    --accent: #52525b;
+    --accent-glow: rgba(82, 82, 91, 0.2);
 }
 
-#main-container {
-    transition: filter 1000ms ease;
+.mood-eerie {
+    --bg-base: #020617; /* Deep Midnight */
+    --accent: #a855f7; /* Purple */
+    --accent-glow: rgba(168, 85, 247, 0.4);
+    --text-primary: #fafafa;
 }
 
-.fade-in { animation: fadeIn 0.6s ease-out; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.mood-serene {
+    --bg-base: #064e3b; /* Deep Forest/Teal */
+    --accent: #2dd4bf; /* Teal */
+    --accent-glow: rgba(45, 212, 191, 0.4);
+}
+
+.mood-action {
+    --bg-base: #450a0a; /* Blood Red/Black */
+    --accent: #ef4444; /* Red */
+    --accent-glow: rgba(239, 68, 68, 0.4);
+}
+
+.mood-mystical {
+    --bg-base: #1e1b4b; /* Deep Indigo */
+    --accent: #fbbf24; /* Amber */
+    --accent-glow: rgba(251, 191, 36, 0.4);
+}
+
+/* Global Styles */
+body, #main-container, body.mood-default, body.mood-eerie, body.mood-serene, body.mood-action, body.mood-mystical {
+    background-color: var(--bg-base) !important;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    transition: background-color 0.8s ease, color 0.8s ease;
+}
+
+/* The Glass Surface Pattern: Ensures text is ALWAYS readable regardless of mood background */
+#view-interactive, #view-novel {
+    position: relative;
+    background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, var(--bg-base) 100%);
+}
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 10px; }
 
-.tab-active { color: #f4f4f5; border-bottom: 2px solid var(--accent-color); }
-.perspective-active { color: #f4f4f5; background: #18181b; border: 1px solid #27272a; }
-
-select {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2352525b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.5rem center;
-    background-size: 0.8rem;
+/* Narrative Typography */
+p {
+    line-height: var(--line-height-prose);
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    /* Subtle shadow improves readability on colored backgrounds */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    font-size: 1.125rem;
+    font-weight: 350; /* Slightly heavier than light for better rendering on dark */
 }
 
-#library-sidebar { transform: translateX(-100%); transition: transform 0.3s ease-in-out; }
-#library-sidebar.open { transform: translateX(0); }
+/* UI Elements */
+.tab-active {
+    color: var(--accent) !important;
+    border-bottom: 2px solid var(--accent);
+    text-shadow: 0 0 10px var(--accent-glow);
+}
 
-.mood-eerie { --accent-color: #10b981; filter: saturate(0.8) hue-rotate(15deg); }
-.mood-serene { --accent-color: #38bdf8; filter: saturate(1.2) hue-rotate(-10deg); }
-.mood-action { --accent-color: #ef4444; filter: saturate(1.5) contrast(1.1); }
-.mood-mystical { --accent-color: #a855f7; filter: saturate(1.3) hue-rotate(45deg); }
-.mood-default { --accent-color: #52525b; filter: none; }
+.perspective-active {
+    background-color: var(--accent);
+    color: var(--bg-base) !important;
+}
+
+/* Interactive elements */
+#user-action {
+    border-color: var(--text-dim);
+    color: var(--text-primary);
+}
+
+#user-action:focus {
+    border-color: var(--accent);
+    box-shadow: 0 1px 0 var(--accent);
+}
+
+/* Animation for "Typing" feel */
+.fade-in {
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Sidebar behavior */
+#library-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+}
+
+#library-sidebar.open {
+    transform: translateX(0);
+}
+
+/* Sidebar Backdrop for Mobile */
+#sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 45;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#sidebar-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Right Sidebar (Presence Drawer) */
+#presence-sidebar {
+    position: fixed;
+    inset: y 0;
+    right: 0;
+    width: 280px;
+    background: var(--bg-base);
+    border-left: 1px solid border-zinc-900;
+    z-index: 50;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -20px 0 50px rgba(0,0,0,0.5);
+}
+
+#presence-sidebar.open {
+    transform: translateX(0);
+}
+
+/* Floating Presence Toggle */
+#presence-toggle {
+    position: fixed;
+    bottom: 8rem;
+    right: 2rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 9999px;
+    background: var(--accent);
+    color: var(--bg-base);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    z-index: 40;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.3s ease;
+}
+
+#presence-toggle:active {
+    transform: scale(0.9);
+}
+
+@media (min-width: 1024px) {
+    #presence-toggle { display: none; }
+}
+
+/* Presence List Item Styles */
+.presence-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    transition: background 0.2s ease;
+}
+
+.presence-item:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+/* Mobile Adjustments */
+@media (max-width: 640px) {
+    header {
+        padding: 1rem !important;
+    }
+    
+    #view-interactive {
+        padding: 1.5rem !important;
+    }
+    
+    p {
+        font-size: 1rem;
+    }
+
+    .mobile-wrap {
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+    }
+}

@@ -1,25 +1,145 @@
 import * as api from './api.js';
 import * as ui from './ui.js';
+import { joinStoryRoom, notifyTyping, notifyStopTyping, sendActionUpdate, sendNarrativeUpdate } from './websocket.js';
 
 export let currentStory = null;
+export let currentStoryHash = null;
 export let selectedModel = '';
 export let novelPerspective = '3rd';
+export let presenceData = [];
+export const allStories = new Map(); // id -> { title, createdAt }
 
 export function setSelectedModel(val) { selectedModel = val; }
 export function setNovelPerspective(val) { novelPerspective = val; }
+export function setCurrentStory(val) { currentStory = val; }
+export function setCurrentStoryHash(val) { currentStoryHash = val; }
+export function setPresenceData(val) { 
+    presenceData = val; 
+    loadLibrary(); 
+}
+
+/**
+ * Robustly extract JSON from AI string that might contain markdown blocks or preamble.
+ */
+function extractJSON(str) {
+    if (!str) return null;
+    try {
+        // 1. Try direct parse
+        return JSON.parse(str);
+    } catch (e) {
+        try {
+            // 2. Try stripping markdown blocks
+            let clean = str.replace(/```json|```/g, '').trim();
+            return JSON.parse(clean);
+        } catch (e2) {
+            try {
+                // 3. Find first { and last }
+                const start = str.indexOf('{');
+                const end = str.lastIndexOf('}');
+                if (start !== -1 && end !== -1) {
+                    const jsonStr = str.substring(start, end + 1);
+                    return JSON.parse(jsonStr);
+                }
+            } catch (e3) {
+                console.warn("JSON extraction failed completely", str);
+            }
+        }
+    }
+    return null;
+}
+
+// Typing Notification Logic
+function handleUserTyping(e) {
+    if (!currentStory) return;
+    
+    // Notify server we are typing
+    notifyTyping(currentStory.id);
+    sendActionUpdate(currentStory.id, e.target.value);
+    
+    // Clear existing timeout
+    if (typingTimeout) clearTimeout(typingTimeout);
+    
+    // Set timeout to stop typing after 3 seconds of inactivity
+    typingTimeout = setTimeout(() => {
+        if (currentStory) notifyStopTyping(currentStory.id);
+        typingTimeout = null;
+    }, 3000);
+}
+
+// --- REMOTE SYNC HANDLERS ---
+
+export function handleRemoteActionUpdate(userId, text) {
+    let elements = remoteTurnElements.get(userId);
+    
+    if (!elements) {
+        const turnDiv = document.createElement('div');
+        turnDiv.className = 'fade-in space-y-4 pt-8 border-t border-zinc-900/50 italic opacity-70';
+        
+        const actionEl = document.createElement('div');
+        actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-600 mb-2';
+        
+        const responseEl = document.createElement('div');
+        responseEl.className = 'text-zinc-400 font-light leading-relaxed space-y-4';
+        
+        turnDiv.appendChild(actionEl);
+        turnDiv.appendChild(responseEl);
+        document.getElementById('interactive-content').appendChild(turnDiv);
+        
+        elements = { container: turnDiv, actionEl, responseEl };
+        remoteTurnElements.set(userId, elements);
+    }
+
+    elements.actionEl.textContent = text ? `> ${text}` : '> ...';
+    const container = document.getElementById('interactive-content');
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+}
+
+export function handleRemoteNarrativeUpdate(userId, text, isFinal) {
+    const elements = remoteTurnElements.get(userId);
+    if (!elements) return;
+
+    // Strip JSON metadata if it leaks into the stream
+    let displayable = text;
+    if (displayable.includes('###')) {
+        displayable = displayable.split('###')[0].trim();
+    }
+
+    elements.responseEl.innerHTML = displayable.split('\n\n').map(p => `<p>${p}</p>`).join('');
+    
+    if (isFinal) {
+        elements.container.classList.remove('italic', 'opacity-70');
+        remoteTurnElements.delete(userId);
+    }
+
+    const container = document.getElementById('interactive-content');
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+}
 
 export async function loadLibrary() {
     const list = document.getElementById('story-list');
     try {
         const stories = await api.fetchStories();
         list.innerHTML = '';
+        allStories.clear(); // Refresh local cache
+
         stories.forEach(s => {
+            allStories.set(s.id, s); // Cache for other components
+
+            const readers = presenceData.filter(u => u.storyId === s.id);
+            const readerNames = readers.map(r => r.username).join(', ');
+
             const div = document.createElement('div');
             div.className = `group flex justify-between items-center p-3 rounded cursor-pointer transition-colors ${currentStory?.id === s.id ? 'bg-zinc-900 text-white' : 'hover:bg-zinc-900/50'}`;
             div.innerHTML = `
                 <div class="flex-1 truncate pr-2" onclick="app.selectStory('${s.id}')">
-                    <div class="text-xs truncate font-medium">${s.title}</div>
-                    <div class="text-[9px] text-zinc-600 uppercase tracking-tighter">${new Date(s.createdAt).toLocaleDateString()}</div>
+                    <div class="flex items-center gap-2">
+                        <div class="text-xs truncate font-medium">${s.title}</div>
+                        ${readers.length > 0 ? `<div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Active Readers: ${readerNames}"></div>` : ''}
+                    </div>
+                    <div class="flex justify-between items-center mt-1">
+                        <div class="text-[9px] text-zinc-600 uppercase tracking-tighter">${new Date(s.createdAt).toLocaleDateString()}</div>
+                        ${readers.length > 0 ? `<div class="text-[8px] text-emerald-600/70 font-semibold uppercase tracking-widest">${readers.length} Online</div>` : ''}
+                    </div>
                 </div>
                 <button onclick="app.deleteStory('${s.id}', event)" class="opacity-0 group-hover:opacity-100 text-zinc-700 hover:text-red-900 transition-opacity">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -41,19 +161,57 @@ export async function createNewStory() {
     } catch (err) { alert("Failed to create story"); }
 }
 
+export async function renameStory() {
+    if (!currentStory) return;
+    const newTitle = prompt("Enter a new title for this adventure:", currentStory.title);
+    if (!newTitle || newTitle === currentStory.title) return;
+
+    try {
+        currentStory.title = newTitle;
+        const response = await api.updateStory(currentStory.id, currentStory);
+        if (response?.hash) setCurrentStoryHash(response.hash);
+        
+        document.getElementById('current-story-title').textContent = currentStory.title;
+        loadLibrary();
+    } catch (err) {
+        alert("Failed to rename story");
+    }
+}
+
 export async function selectStory(id) {
     try {
-        currentStory = await api.fetchStoryById(id);
+        const response = await api.fetchStoryById(id);
+        currentStory = response.story;
+        currentStoryHash = response.hash;
+        
         document.getElementById('current-story-title').textContent = currentStory.title;
         document.getElementById('input-area').classList.remove('opacity-50', 'pointer-events-none');
         
-        // Backwards compatibility for old stories missing messages
+        // Show rename button
+        const renameBtn = document.getElementById('btn-rename-story');
+        if (renameBtn) renameBtn.classList.remove('hidden');
+
+        const input = document.getElementById('user-action');
+        input.removeEventListener('input', handleUserTyping);
+        input.addEventListener('input', handleUserTyping);
+        
         if (!currentStory.messages) currentStory.messages = [];
         
         ui.applyMood(currentStory.currentMood || 'default', currentStory.currentTheme);
         renderStory();
         loadLibrary();
-    } catch (err) { alert("Failed to load story"); }
+
+        // Update URL state
+        const url = new URL(window.location);
+        url.searchParams.set('storyId', id);
+        window.history.pushState({}, '', url);
+
+        // Join the WebSocket room for this story
+        joinStoryRoom(id);
+    } catch (err) { 
+        console.error("Failed to load story:", err);
+        alert("Failed to load story"); 
+    }
 }
 
 export async function deleteStory(id, e) {
@@ -64,9 +222,19 @@ export async function deleteStory(id, e) {
         if (currentStory?.id === id) {
             currentStory = null;
             document.getElementById('current-story-title').textContent = 'Select a Story';
-            document.getElementById('interactive-content').innerHTML = '<div class="text-zinc-600 italic text-center pt-24">Select a story from the library or create a new one to begin.</div>';
+            document.getElementById('interactive-content').innerHTML = `<div class="text-zinc-600 italic text-center pt-24 flex flex-col items-center gap-4">
+                    Select a story from the library or create a new one to begin.
+                    <button onclick="app.createNewStory()" class="text-[10px] uppercase tracking-widest border border-zinc-800 px-4 py-2 hover:bg-zinc-900 transition-colors">
+                        + New Adventure
+                    </button>
+                </div>`;
             document.getElementById('input-area').classList.add('opacity-50', 'pointer-events-none');
             ui.applyMood('default');
+            
+            // Clear storyId from URL
+            const url = new URL(window.location);
+            url.searchParams.delete('storyId');
+            window.history.pushState({}, '', url);
         }
         loadLibrary();
     } catch (err) { alert("Failed to delete story"); }
@@ -101,6 +269,13 @@ export async function handleAction() {
     const input = document.getElementById('user-action');
     const action = input.value.trim();
     if (!action || !currentStory || !selectedModel) return;
+
+    // Stop typing notification
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+        typingTimeout = null;
+    }
+    notifyStopTyping(currentStory.id);
 
     input.value = '';
     ui.updateStatus('Directing Core...');
@@ -171,18 +346,19 @@ export async function handleAction() {
                 }
                 responseContent.innerHTML = displayable.split('\n\n').map(p => `<p>${p}</p>`).join('');
                 iContainer.scrollTo({ top: iContainer.scrollHeight, behavior: 'smooth' });
+                
+                // BROADCAST THE STREAM
+                sendNarrativeUpdate(currentStory.id, displayable, false);
             }
         });
 
         // Parse Metadata
         let mood = 'default';
         let theme = null;
-        try {
-            const meta = JSON.parse(metadataJSON);
+        const meta = extractJSON(metadataJSON);
+        if (meta) {
             mood = meta.mood || 'default';
             theme = meta.theme_colors;
-        } catch (e) {
-            console.warn("Metadata parse failed", metadataJSON);
         }
 
         // Background Novelization (Non-streaming for consistency)
@@ -190,8 +366,17 @@ export async function handleAction() {
             { role: "system", content: "Novelize the following event in a STRICT, FORMAL THIRD-PERSON literary style. Respond ONLY with a JSON object: { \"text\": \"...\" }" },
             { role: "user", content: `Action: ${action}\nResult: ${narrativeText}` }
         ];
-        const tpResJSON = await (await api.callChat(selectedModel, tpPrompt)).json();
-        const tpData = JSON.parse(tpResJSON.message.content);
+        
+        let tpData = { text: narrativeText }; // Fallback to raw text
+        try {
+            const tpResJSON = await (await api.callChat(selectedModel, tpPrompt)).json();
+            const extracted = extractJSON(tpResJSON.message.content);
+            if (extracted && extracted.text) {
+                tpData = extracted;
+            }
+        } catch (e) {
+            console.warn("Novelization parse failed, using raw response");
+        }
 
         // Finalize State
         currentStory.interactive.push({ action, response: narrativeText, mood });
@@ -202,7 +387,13 @@ export async function handleAction() {
         currentStory.currentTheme = theme;
 
         ui.applyMood(mood, theme);
-        await api.updateStory(currentStory.id, currentStory);
+        const updateResponse = await api.updateStory(currentStory.id, currentStory);
+        if (updateResponse && updateResponse.hash) {
+            setCurrentStoryHash(updateResponse.hash);
+        }
+        
+        // BROADCAST FINAL STATE
+        sendNarrativeUpdate(currentStory.id, narrativeText, true);
         ui.updateStatus('');
 
     } catch (err) {
