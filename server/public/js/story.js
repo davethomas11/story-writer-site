@@ -9,6 +9,9 @@ export let novelPerspective = '3rd';
 export let presenceData = [];
 export const allStories = new Map(); // id -> { title, createdAt }
 
+let typingTimeout = null;
+const remoteTurnElements = new Map(); // userId -> { container, actionEl, responseEl }
+
 export function setSelectedModel(val) { selectedModel = val; }
 export function setNovelPerspective(val) { novelPerspective = val; }
 export function setCurrentStory(val) { currentStory = val; }

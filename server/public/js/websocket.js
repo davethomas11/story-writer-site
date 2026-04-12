@@ -15,11 +15,14 @@ export function initWebSocket(url = window.location.origin) {
 
         socket.on('session_established', (data) => {
             api.setUserId(data.userId);
+            // Sync current username with socket session
             updateUsername(api.username);
         });
 
         socket.on('connect', () => {
             ui.updateConnectionStatus('Connected', true);
+            
+            // Check URL for active story to auto-join room
             const urlParams = new URLSearchParams(window.location.search);
             const storyId = urlParams.get('storyId');
             if (storyId) joinStoryRoom(storyId);
@@ -31,6 +34,7 @@ export function initWebSocket(url = window.location.origin) {
 
         socket.on('presence_updated', (presenceList) => {
             ui.updatePresence(presenceList);
+            // Lazy load story module to avoid circular dependency issues
             import('./story.js').then(story => story.setPresenceData(presenceList));
         });
 
@@ -79,13 +83,17 @@ export function initWebSocket(url = window.location.origin) {
             if (data.initiator === api.userId) return;
             import('./story.js').then(async (story) => {
                 if (story.currentStory?.id === data.storyId) {
-                    // Hash mismatch check is still valuable to ensure full state parity
                     if (story.currentStoryHash !== data.newHash) {
                         try {
                             const response = await api.fetchStoryById(data.storyId); 
-                            story.setCurrentStory(response.story);
+                            const updatedStory = response.story;
+                            
+                            story.setCurrentStory(updatedStory);
                             story.setCurrentStoryHash(response.hash); 
                             story.renderStory(); 
+                            
+                            // SYNC MOOD AND THEME
+                            ui.applyMood(updatedStory.currentMood || 'default', updatedStory.currentTheme);
                         } catch (e) { story.loadLibrary(); }
                     }
                 } else {

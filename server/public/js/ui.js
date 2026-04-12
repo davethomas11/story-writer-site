@@ -84,19 +84,20 @@ export function applyMood(mood, theme) {
     const moodClass = moodMap[mood] || moodMap['default'];
     body.classList.add(moodClass);
 
-    // Apply custom theme colors if provided by AI, otherwise reset to mood defaults
+    // Apply custom theme colors to the BODY element directly
+    // This ensures they override the variables defined in the .mood- class
     if (theme && theme.bg) {
-        document.documentElement.style.setProperty('--bg-base', theme.bg);
+        body.style.setProperty('--bg-base', theme.bg);
     } else {
-        document.documentElement.style.removeProperty('--bg-base');
+        body.style.removeProperty('--bg-base');
     }
 
     if (theme && theme.accent) {
-        document.documentElement.style.setProperty('--accent', theme.accent);
-        document.documentElement.style.setProperty('--accent-glow', `${theme.accent}66`); // 40% opacity
+        body.style.setProperty('--accent', theme.accent);
+        body.style.setProperty('--accent-glow', `${theme.accent}66`); // 40% opacity
     } else {
-        document.documentElement.style.removeProperty('--accent');
-        document.documentElement.style.removeProperty('--accent-glow');
+        body.style.removeProperty('--accent');
+        body.style.removeProperty('--accent-glow');
     }
 }
 
