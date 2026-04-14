@@ -20,7 +20,11 @@ export function initWebSocket(url = window.location.origin) {
         });
 
         socket.on('connect', () => {
-            ui.updateConnectionStatus('Connected', true);
+            // Only update status to Connected if we aren't in the middle of a "Waking" status from app.js
+            const el = document.getElementById('connection-status');
+            if (el && !el.textContent.includes('Waking')) {
+                ui.updateConnectionStatus('Connected', true);
+            }
             
             // Check URL for active story to auto-join room
             const urlParams = new URLSearchParams(window.location.search);

@@ -27,6 +27,61 @@ module.exports = (io) => {
         res.json({ status: 'ok', timestamp: new Date() });
     });
 
+    // Statistics endpoint
+    router.get('/stats', (req, res) => {
+        try {
+            const storyFiles = fs.readdirSync(STORIES_DIR).filter(f => f.endsWith('.json'));
+            const userFiles = fs.readdirSync(USERS_DIR).filter(f => f.endsWith('.json'));
+
+            let totalTurns = 0;
+            let totalNovelChars = 0;
+            let totalMessages = 0;
+
+            storyFiles.forEach(file => {
+                const storyData = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, file), 'utf8'));
+                totalTurns += (storyData.interactive || []).length;
+                totalMessages += (storyData.messages || []).length;
+
+                const mdPath = path.join(STORIES_DIR, file.replace('.json', '.md'));
+                if (fs.existsSync(mdPath)) {
+                    totalNovelChars += fs.readFileSync(mdPath, 'utf8').length;
+                }
+            });
+
+            res.json({
+                stories: storyFiles.length,
+                users: userFiles.length,
+                totalTurns,
+                totalMessages,
+                totalNovelChars,
+                uptime: process.uptime()
+            });
+        } catch (error) {
+            console.error('Stats Error:', error.message);
+            res.status(500).json({ error: 'Failed to generate statistics' });
+        }
+    });
+
+    // Health check endpoint (checks Ollama availability too)
+    router.get('/health', async (req, res) => {
+        const health = {
+            server: 'ok',
+            ollama: 'checking...',
+            timestamp: new Date().toISOString()
+        };
+
+        try {
+            const response = await axios.get(OLLAMA_TAGS_URL, { timeout: 2000 });
+            health.ollama = 'ok';
+            health.models = response.data.models ? response.data.models.length : 0;
+            res.json(health);
+        } catch (error) {
+            health.ollama = 'unavailable';
+            health.error = error.message;
+            res.status(503).json(health);
+        }
+    });
+
     // Fetch available models from Ollama
     router.get('/models', async (req, res) => {
         try {

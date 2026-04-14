@@ -7,6 +7,7 @@ import { initWebSocket } from './websocket.js';
 window.app = {
     toggleLibrary: ui.toggleLibrary,
     closeLibrary: ui.closeLibrary,
+    toggleDebug: ui.toggleDebug,
     switchTab: (tab) => {
         ui.switchTab(tab);
         if (tab === 'novel') story.renderStory();
@@ -24,6 +25,16 @@ window.app = {
     editProfile: ui.editProfile,
     togglePresence: ui.togglePresence,
     togglePresenceModal: ui.togglePresenceModal,
+    showStats: async () => {
+        try {
+            const stats = await api.fetchStats();
+            ui.showStats(stats);
+        } catch (err) {
+            console.error("Failed to load stats", err);
+            alert("Failed to load statistics from the server.");
+        }
+    },
+    toggleStatsModal: ui.toggleStatsModal,
     switchNovelPerspective: (mode) => {
         story.setNovelPerspective(mode);
         document.getElementById('btn-1st-person').classList.toggle('perspective-active', mode === '1st');
@@ -37,18 +48,29 @@ window.app = {
 // Initialize WebSocket connection
 initWebSocket();
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // Initial UI state
-    ui.applyMood('default');
-    api.setUsername(api.username); // Set initial button text
-    
-    // Parse URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialStoryId = urlParams.get('storyId');
-    const initialTab = urlParams.get('tab') || 'interactive';
+async function initApp() {
+    ui.updateConnectionStatus('Checking AI...', false);
 
-    // Apply initial tab
-    ui.switchTab(initialTab);
+    let health = null;
+    let attempts = 0;
+    const maxAttempts = 15; // ~30 seconds total
+
+    while (attempts < maxAttempts) {
+        try {
+            health = await api.checkHealth();
+            if (health.server === 'ok' && health.ollama === 'ok') break;
+            ui.updateConnectionStatus(`Waking AI (${attempts + 1}/${maxAttempts})...`, false);
+        } catch (e) {
+            ui.updateConnectionStatus(`Connecting (${attempts + 1}/${maxAttempts})...`, false);
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (!health || health.ollama !== 'ok') {
+        ui.updateConnectionStatus('AI Core Offline', false);
+        // We still load stories if possible, as user might want to read old ones
+    }
 
     // Load Models
     try {
@@ -58,17 +80,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         select.innerHTML = '';
 
-        // Filter for Llama models and sort them by name (descending, assuming newest comes last alphabetically)
         const llamaModels = models
             .filter(m => m.name.toLowerCase().includes('llama'))
-            .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending
+            .sort((a, b) => b.name.localeCompare(a.name));
 
         let defaultModel = null;
 
         if (llamaModels.length > 0) {
-            defaultModel = llamaModels[0].name; // Default to the newest Llama model
+            defaultModel = llamaModels[0].name;
         } else if (models.length > 0) {
-            defaultModel = models[0].name; // Fallback to the first model if no Llama models are found
+            defaultModel = models[0].name;
         }
 
         models.forEach((m, i) => {
@@ -76,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             opt.value = m.name; opt.textContent = m.name;
             select.appendChild(opt);
             if (m.name === defaultModel) {
-                opt.selected = true; // Mark the default model as selected
+                opt.selected = true;
             }
         });
 
@@ -85,16 +106,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         select.addEventListener('change', (e) => story.setSelectedModel(e.target.value));
-        ui.updateConnectionStatus('Ready', true);
+        if (health && health.ollama === 'ok') {
+            ui.updateConnectionStatus('Ready', true);
+        }
     } catch (err) {
-        ui.updateConnectionStatus('Offline', false);
+        console.error("Failed to load models", err);
     }
 
     // Load Stories
-    await story.loadLibrary();
+    try {
+        await story.loadLibrary();
+    } catch (err) {
+        console.error("Failed to load library", err);
+    }
 
     // Auto-select story if present in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialStoryId = urlParams.get('storyId');
     if (initialStoryId) {
         story.selectStory(initialStoryId);
     }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initial UI state
+    ui.applyMood('default');
+    api.setUsername(api.username); // Set initial button text
+    
+    // Parse URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialTab = urlParams.get('tab') || 'interactive';
+
+    // Apply initial tab
+    ui.switchTab(initialTab);
+
+    // Start initialization process
+    initApp();
 });

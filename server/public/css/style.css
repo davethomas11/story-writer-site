@@ -192,6 +192,45 @@ p {
     background: rgba(255,255,255,0.03);
 }
 
+/* Debug Console */
+#debug-console {
+    display: none;
+}
+
+@media (min-width: 800px) {
+    #debug-console {
+        display: flex;
+    }
+}
+
+#debug-console.open {
+    transform: translateY(0);
+}
+
+#debug-console.open #debug-toggle-icon {
+    transform: rotate(180deg);
+}
+
+.debug-entry {
+    border-left: 2px solid var(--accent);
+    padding-left: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.debug-entry-title {
+    color: var(--accent);
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.debug-entry-content {
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 /* Mobile Adjustments */
 @media (max-width: 640px) {
     header {

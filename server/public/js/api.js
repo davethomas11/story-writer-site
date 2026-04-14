@@ -32,6 +32,21 @@ export async function fetchProfile(id) {
     return await res.json();
 }
 
+export async function checkHealth() {
+    try {
+        const res = await fetch(`${API_BASE}/health`);
+        return await res.json();
+    } catch (e) {
+        throw new Error('Server unreachable');
+    }
+}
+
+export async function fetchStats() {
+    const res = await fetch(`${API_BASE}/stats`);
+    if (!res.ok) throw new Error('Failed to fetch statistics');
+    return await res.json();
+}
+
 export async function updateProfile(userId, username) {
     const res = await fetch(`${API_BASE}/profile`, {
         method: 'POST',

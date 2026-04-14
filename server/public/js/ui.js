@@ -101,6 +101,37 @@ export function applyMood(mood, theme) {
     }
 }
 
+export function toggleDebug() {
+    const console = document.getElementById('debug-console');
+    if (console) {
+        console.classList.toggle('open');
+    }
+}
+
+export function logToDebug(title, content) {
+    const logs = document.getElementById('debug-logs');
+    if (!logs) return;
+
+    const entry = document.createElement('div');
+    entry.className = 'debug-entry fade-in';
+    
+    const time = new Date().toLocaleTimeString();
+    
+    entry.innerHTML = `
+        <div class="debug-entry-title">[${time}] ${title}</div>
+        <div class="debug-entry-content">${escapeHtml(content)}</div>
+    `;
+    
+    logs.appendChild(entry);
+    logs.scrollTo({ top: logs.scrollHeight, behavior: 'smooth' });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 export function updateStatus(msg) {
     const el = document.getElementById('status-msg');
     if (el) el.textContent = msg;
@@ -205,10 +236,60 @@ export function updateTypingIndicator(username) {
         inputArea.classList.add('opacity-50', 'pointer-events-none');
     } else {
         el.classList.remove('opacity-100');
-        // Restore input area if story is selected and not blocked for other reasons
+        // Restore input area if story is selected and server is ready
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('storyId')) {
+        const statusEl = document.getElementById('connection-status');
+        const isReady = statusEl && statusEl.textContent.includes('Ready');
+        if (urlParams.get('storyId') && isReady) {
              inputArea.classList.remove('opacity-50', 'pointer-events-none');
+        }
+    }
+}
+
+export function showStats(stats) {
+    const content = document.getElementById('stats-content');
+    if (!content) return;
+
+    const uptimeHrs = Math.floor(stats.uptime / 3600);
+    const uptimeMins = Math.floor((stats.uptime % 3600) / 60);
+
+    content.innerHTML = `
+        <div class="grid grid-cols-2 gap-4">
+            <div class="p-3 bg-zinc-800/30 border border-zinc-800 rounded">
+                <div class="text-[9px] uppercase tracking-widest text-zinc-500 mb-1">Stories</div>
+                <div class="text-xl font-light text-zinc-100">${stats.stories}</div>
+            </div>
+            <div class="p-3 bg-zinc-800/30 border border-zinc-800 rounded">
+                <div class="text-[9px] uppercase tracking-widest text-zinc-500 mb-1">Explorers</div>
+                <div class="text-xl font-light text-zinc-100">${stats.users}</div>
+            </div>
+            <div class="p-3 bg-zinc-800/30 border border-zinc-800 rounded">
+                <div class="text-[9px] uppercase tracking-widest text-zinc-500 mb-1">Total Turns</div>
+                <div class="text-xl font-light text-zinc-100">${stats.totalTurns}</div>
+            </div>
+            <div class="p-3 bg-zinc-800/30 border border-zinc-800 rounded">
+                <div class="text-[9px] uppercase tracking-widest text-zinc-500 mb-1">Novel Chars</div>
+                <div class="text-xl font-light text-zinc-100">${(stats.totalNovelChars / 1000).toFixed(1)}k</div>
+            </div>
+        </div>
+        <div class="pt-2 border-t border-zinc-800">
+            <div class="text-[9px] uppercase tracking-widest text-zinc-500 mb-1 text-center">Server Uptime</div>
+            <div class="text-xs text-zinc-300 text-center">${uptimeHrs}h ${uptimeMins}m</div>
+        </div>
+    `;
+    
+    toggleStatsModal(true);
+}
+
+export function toggleStatsModal(show) {
+    const el = document.getElementById('stats-modal');
+    if (el) {
+        if (show) {
+            el.classList.remove('pointer-events-none');
+            el.classList.add('opacity-100');
+        } else {
+            el.classList.add('pointer-events-none');
+            el.classList.remove('opacity-100');
         }
     }
 }
@@ -217,6 +298,25 @@ export function updateConnectionStatus(status, isReady) {
     const el = document.getElementById('connection-status');
     if (el) {
         el.textContent = `• ${status}`;
-        el.className = isReady ? 'text-emerald-900' : 'text-red-900';
+        // emerald-500 for ready, amber-500 for waking/connecting, red-500 for offline
+        if (isReady) {
+            el.className = 'whitespace-nowrap text-emerald-500';
+        } else if (status.includes('...')) {
+            el.className = 'whitespace-nowrap text-amber-500';
+        } else {
+            el.className = 'whitespace-nowrap text-red-500';
+        }
+
+        // Enable/Disable input area based on readiness
+        const inputArea = document.getElementById('input-area');
+        if (inputArea) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasStory = !!urlParams.get('storyId');
+            if (isReady && hasStory) {
+                inputArea.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                inputArea.classList.add('opacity-50', 'pointer-events-none');
+            }
+        }
     }
 }

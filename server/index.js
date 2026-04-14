@@ -30,7 +30,7 @@ app.get('.*path', (req, res) => {
 });
 
 // Start the server
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module) {
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`Middleware server running at http://localhost:${PORT}`);
     });
