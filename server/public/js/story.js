@@ -172,6 +172,7 @@ export async function selectStory(id) {
         
         if (!currentStory.messages) currentStory.messages = [];
         
+        ui.updateChapterSelection(currentStory);
         ui.applyMood(currentStory.currentMood || 'default', currentStory.currentTheme);
         renderStory();
         loadLibrary();
@@ -186,6 +187,60 @@ export async function selectStory(id) {
     } catch (err) { 
         console.error("Failed to load story:", err);
         alert("Failed to load story"); 
+    }
+}
+
+export async function switchChapter(chapterName) {
+    if (!currentStory) return;
+    try {
+        ui.updateStatus('Switching chapter...');
+        await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/switch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chapterName })
+        });
+        await selectStory(currentStory.id);
+        ui.updateStatus('');
+    } catch (err) {
+        alert("Failed to switch chapter");
+    }
+}
+
+export async function createNewChapter() {
+    if (!currentStory) return;
+    if (!confirm("Start a new chapter? This will clear the immediate AI memory but keep the overall story context.")) return;
+    try {
+        ui.updateStatus('Creating new chapter...');
+        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+        await selectStory(currentStory.id);
+        ui.updateStatus('');
+    } catch (err) {
+        alert("Failed to create chapter");
+    }
+}
+
+export async function recomposeChapter() {
+    if (!currentStory || !selectedModel) return;
+    if (!confirm("Ask the AI to rewrite this entire chapter into a seamless narrative? This will replace the current turn-by-turn interactive view for this chapter.")) return;
+    
+    try {
+        ui.updateStatus('Recomposing chapter...');
+        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/recompose`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: selectedModel })
+        });
+        const data = await res.json();
+        if (data.success) {
+            await selectStory(currentStory.id);
+        }
+        ui.updateStatus('');
+    } catch (err) {
+        console.error(err);
+        alert("Failed to recompose chapter");
     }
 }
 
@@ -253,7 +308,7 @@ export async function handleAction() {
     notifyStopTyping(currentStory.id);
 
     input.value = '';
-    ui.updateStatus('Directing Core...');
+    ui.updateStatus('Thinking...');
     
     // Clear initial prompt if first turn
     if (currentStory.interactive.length === 0) {
@@ -277,58 +332,52 @@ export async function handleAction() {
     iContainer.appendChild(turnDiv);
 
     try {
-        // Build Chat Messages
-        const systemMessage = {
-            role: "system",
-            content: `You are an immersive storyteller. Respond in the FIRST PERSON.
-            Provide the story response first, followed by the separator ###JSON###, then the mood metadata.
-            
-            STRICT OUTPUT FORMAT:
-            [Narrative Text]
-            ###JSON###
-            {
-                "mood": "eerie|serene|action|mystical|default",
-                "theme_colors": { "bg": "#hex", "accent": "#hex" }
-            }`
-        };
-
-        const userMessage = { role: "user", content: action };
-        const messages = [systemMessage, ...currentStory.messages, userMessage];
-
-        // LOG TO DEBUG CONSOLE
-        ui.logToDebug('AI Prompt (Narrative)', JSON.stringify(messages, null, 2));
+        const response = await api.storyChat(currentStory.id, selectedModel, action, true);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
         let fullStreamedText = "";
         let narrativeText = "";
         let metadataJSON = "";
         let isMetadataMode = false;
 
-        await api.streamChat(selectedModel, messages, (chunk, full) => {
-            fullStreamedText = full;
-            
-            if (fullStreamedText.includes('###JSON###')) {
-                const parts = fullStreamedText.split('###JSON###');
-                narrativeText = parts[0].trim();
-                metadataJSON = parts[1].trim();
-                isMetadataMode = true;
-            } else {
-                narrativeText = fullStreamedText;
-            }
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            // Update UI live (only narrative part)
-            if (!isMetadataMode) {
-                // Peek ahead: if the text contains the start of our separator, strip it for display
-                let displayable = narrativeText;
-                if (displayable.includes('###')) {
-                    displayable = displayable.split('###')[0].trim();
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(l => l.trim());
+
+            for (const line of lines) {
+                try {
+                    const data = JSON.parse(line);
+                    if (data.message && data.message.content) {
+                        fullStreamedText += data.message.content;
+                        
+                        if (fullStreamedText.includes('###JSON###')) {
+                            const parts = fullStreamedText.split('###JSON###');
+                            narrativeText = parts[0].trim();
+                            metadataJSON = parts[1].trim();
+                            isMetadataMode = true;
+                        } else {
+                            narrativeText = fullStreamedText;
+                        }
+
+                        if (!isMetadataMode) {
+                            let displayable = narrativeText;
+                            if (displayable.includes('###')) {
+                                displayable = displayable.split('###')[0].trim();
+                            }
+                            responseContent.innerHTML = displayable.split('\n\n').map(p => `<p>${p}</p>`).join('');
+                            iContainer.scrollTo({ top: iContainer.scrollHeight, behavior: 'smooth' });
+                            sendNarrativeUpdate(currentStory.id, displayable, false);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to parse stream line", line);
                 }
-                responseContent.innerHTML = displayable.split('\n\n').map(p => `<p>${p}</p>`).join('');
-                iContainer.scrollTo({ top: iContainer.scrollHeight, behavior: 'smooth' });
-                
-                // BROADCAST THE STREAM
-                sendNarrativeUpdate(currentStory.id, displayable, false);
             }
-        });
+        }
 
         // Parse Metadata
         let mood = 'default';
@@ -339,29 +388,27 @@ export async function handleAction() {
             theme = meta.theme_colors;
         }
 
-        // Background Novelization (Non-streaming for consistency)
+        // Background Novelization
         const tpPrompt = [
             { role: "system", content: "Novelize the following event in a STRICT, FORMAL THIRD-PERSON literary style. Respond ONLY with a JSON object: { \"text\": \"...\" }" },
             { role: "user", content: `Action: ${action}\nResult: ${narrativeText}` }
         ];
         
-        // LOG TO DEBUG CONSOLE
         ui.logToDebug('AI Prompt (Novelization)', JSON.stringify(tpPrompt, null, 2));
 
-        let tpData = { text: narrativeText }; // Fallback to raw text
+        let tpData = { text: narrativeText };
         try {
-            const tpResJSON = await (await api.callChat(selectedModel, tpPrompt)).json();
+            const tpRes = await api.callChat(selectedModel, tpPrompt);
+            const tpResJSON = await tpRes.json();
             const extracted = extractJSON(tpResJSON.message.content);
-            if (extracted && extracted.text) {
-                tpData = extracted;
-            }
+            if (extracted && extracted.text) tpData = extracted;
         } catch (e) {
-            console.warn("Novelization parse failed, using raw response");
+            console.warn("Novelization parse failed");
         }
 
         // Finalize State
         currentStory.interactive.push({ action, response: narrativeText, mood });
-        currentStory.messages.push(userMessage);
+        currentStory.messages.push({ role: "user", content: action });
         currentStory.messages.push({ role: "assistant", content: fullStreamedText });
         currentStory.novel += `\n\n${tpData.text}`;
         currentStory.currentMood = mood;
@@ -373,9 +420,13 @@ export async function handleAction() {
             setCurrentStoryHash(updateResponse.hash);
         }
         
-        // BROADCAST FINAL STATE
         sendNarrativeUpdate(currentStory.id, narrativeText, true);
         ui.updateStatus('');
+
+        // 5. Chapter Length Check
+        if (currentStory.interactive.length >= 20) {
+            ui.updateStatus('Tip: This chapter is getting long. Consider starting a new chapter to keep the AI focused.');
+        }
 
     } catch (err) {
         console.error(err);

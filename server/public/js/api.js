@@ -114,6 +114,19 @@ export async function callChat(model, messages, stream = false) {
     return res;
 }
 
+export async function storyChat(id, model, action, stream = true) {
+    const res = await fetch(`${API_BASE}/stories/${id}/chat`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Id': userId
+        },
+        body: JSON.stringify({ model, action, stream })
+    });
+    if (!res.ok) throw new Error('AI connection failed');
+    return res;
+}
+
 export async function streamChat(model, messages, onChunk) {
     const res = await callChat(model, messages, true);
     const reader = res.body.getReader();

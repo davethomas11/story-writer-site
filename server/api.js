@@ -4,6 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { sanitizeFolderName } = require('./utils');
+const chapter = require('./chapter');
+
+const context = require('./context');
+
 const router = express.Router();
 
 const OLLAMA_URL = 'http://localhost:11434/api/generate';
@@ -14,7 +19,7 @@ const USERS_DIR = path.join(__dirname, 'users');
 
 // Ensure directories exist
 [STORIES_DIR, USERS_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
 function calculateHash(content) {
@@ -30,26 +35,41 @@ module.exports = (io) => {
     // Statistics endpoint
     router.get('/stats', (req, res) => {
         try {
-            const storyFiles = fs.readdirSync(STORIES_DIR).filter(f => f.endsWith('.json'));
+            const folders = fs.readdirSync(STORIES_DIR).filter(f => {
+                const p = path.join(STORIES_DIR, f);
+                return fs.statSync(p).isDirectory() && f !== 'archive';
+            });
             const userFiles = fs.readdirSync(USERS_DIR).filter(f => f.endsWith('.json'));
 
             let totalTurns = 0;
             let totalNovelChars = 0;
             let totalMessages = 0;
 
-            storyFiles.forEach(file => {
-                const storyData = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, file), 'utf8'));
-                totalTurns += (storyData.interactive || []).length;
-                totalMessages += (storyData.messages || []).length;
+            folders.forEach(folder => {
+                const storyDir = path.join(STORIES_DIR, folder);
+                const configPath = path.join(storyDir, 'config.json');
+                if (!fs.existsSync(configPath)) return;
 
-                const mdPath = path.join(STORIES_DIR, file.replace('.json', '.md'));
-                if (fs.existsSync(mdPath)) {
-                    totalNovelChars += fs.readFileSync(mdPath, 'utf8').length;
-                }
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                
+                (config.chapters || []).forEach(ch => {
+                    const chDir = path.join(storyDir, ch);
+                    const messagesPath = path.join(chDir, 'messages.json');
+                    const novelPath = path.join(chDir, 'novel.md');
+                    
+                    if (fs.existsSync(messagesPath)) {
+                        const msgs = JSON.parse(fs.readFileSync(messagesPath, 'utf8'));
+                        totalMessages += msgs.length;
+                        totalTurns += Math.floor(msgs.length / 2); // Approximation
+                    }
+                    if (fs.existsSync(novelPath)) {
+                        totalNovelChars += fs.readFileSync(novelPath, 'utf8').length;
+                    }
+                });
             });
 
             res.json({
-                stories: storyFiles.length,
+                stories: folders.length,
                 users: userFiles.length,
                 totalTurns,
                 totalMessages,
@@ -133,6 +153,57 @@ module.exports = (io) => {
         }
     });
 
+    // Story-specific Chat (Context-aware)
+    router.post('/stories/:id/chat', async (req, res) => {
+        try {
+            const { model, action, stream } = req.body;
+            const storyId = req.params.id;
+            
+            const config = chapter.getStoryConfig(storyId);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
+            
+            const currentChapter = config.currentChapter || 'chapter-1';
+            
+            // 1. Build context-aware prompt
+            const messages = context.buildPrompt(storyId, currentChapter);
+            
+            // 2. Add the new user action
+            messages.push({ role: "user", content: action });
+
+            if (stream) {
+                const response = await axios({
+                    method: 'post',
+                    url: OLLAMA_CHAT_URL,
+                    data: { model, messages, stream: true },
+                    responseType: 'stream'
+                });
+
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+
+                response.data.pipe(res);
+                
+                // We'll handle state updates on the frontend for now (saving back to server)
+                // or we could listen to the stream here and update state on 'done'
+            } else {
+                const response = await axios.post(OLLAMA_CHAT_URL, { model, messages, stream: false });
+                
+                // Auto-summarize check
+                const chData = chapter.getChapterData(storyId, currentChapter);
+                if (context.shouldSummarize(chData)) {
+                    // Run in background
+                    context.updateSummary(storyId, currentChapter, model);
+                }
+                
+                res.json(response.data);
+            }
+        } catch (error) {
+            console.error('Story Chat Error:', error.message);
+            res.status(500).json({ error: 'Failed to communicate with AI' });
+        }
+    });
+
     // --- USER PROFILE ENDPOINTS ---
 
     router.get('/profile/:userId', (req, res) => {
@@ -167,105 +238,138 @@ module.exports = (io) => {
         }
     });
 
-    // --- STORY MANAGEMENT ENDPOINTS (HYBRID STORAGE) ---
+    // --- STORY MANAGEMENT ENDPOINTS (V2 FOLDER STORAGE) ---
+
+    function parseInteractive(md) {
+        if (!md) return [];
+        return md.split('\n\n---\n\n').filter(t => t.trim()).map(turnMd => {
+            const lines = turnMd.split('\n\n');
+            const action = lines[0].startsWith('> ') ? lines[0].replace(/^> /, '').trim() : 'Beginning';
+            const response = lines.slice(1).join('\n\n').trim();
+            return { action, response, mood: 'default' };
+        });
+    }
 
     // List all stories (metadata only)
     router.get('/stories', (req, res) => {
         try {
-            const files = fs.readdirSync(STORIES_DIR);
-            const stories = files.filter(f => f.endsWith('.json')).map(file => {
-                const data = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, file), 'utf8'));
+            const folders = fs.readdirSync(STORIES_DIR).filter(f => {
+                const p = path.join(STORIES_DIR, f);
+                return fs.statSync(p).isDirectory() && f !== 'archive';
+            });
+            
+            const stories = folders.map(folder => {
+                const configPath = path.join(STORIES_DIR, folder, 'config.json');
+                if (!fs.existsSync(configPath)) return null;
+                const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
                 return {
                     id: data.id,
                     title: data.title,
                     createdAt: data.createdAt
                 };
-            });
+            }).filter(s => s !== null);
+            
             res.json(stories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
         } catch (error) {
+            console.error('List Stories Error:', error.message);
             res.status(500).json({ error: 'Failed to list stories' });
         }
     });
 
-    // Get a specific story (Merging JSON and MD)
+    // Get a specific story
     router.get('/stories/:id', (req, res) => {
         try {
-            const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-            const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+            const config = chapter.getStoryConfig(req.params.id);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
 
-            if (!fs.existsSync(jsonPath)) return res.status(404).json({ error: 'Story not found' });
+            const chData = chapter.getChapterData(req.params.id, config.currentChapter || 'chapter-1');
             
-            const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-            
-            // Inject novel text from MD if it exists
-            let novel = "";
-            if (fs.existsSync(mdPath)) {
-                novel = fs.readFileSync(mdPath, 'utf8');
-            }
-            data.novel = novel || data.novel || ""; 
+            // Construct the story object for the frontend
+            const story = {
+                ...config,
+                interactive: parseInteractive(chData.interactive),
+                novel: chData.novel,
+                messages: chData.messages,
+                summary: chData.summary
+            };
 
-            // Calculate hash for the frontend to track changes
-            const hash = calculateHash(JSON.stringify(data));
-            res.json({ story: data, hash });
+            const hash = calculateHash(JSON.stringify(story));
+            res.json({ story, hash });
         } catch (error) {
+            console.error('Load Story Error:', error.message);
             res.status(500).json({ error: 'Failed to load story' });
         }
     });
 
-    // Create a new story (Initializing both files)
+    // Create a new story
     router.post('/stories', (req, res) => {
         try {
             const id = `story-${Date.now()}`;
-            const newStory = {
+            const title = req.body.title || 'Untitled Adventure';
+            const folderName = sanitizeFolderName(title, id);
+            const storyDir = path.join(STORIES_DIR, folderName);
+
+            if (!fs.existsSync(storyDir)) fs.mkdirSync(storyDir, { recursive: true });
+
+            const config = {
                 id,
-                title: req.body.title || 'Untitled Adventure',
+                title,
                 createdAt: new Date().toISOString(),
-                interactive: [],
-                messages: [],
                 currentMood: 'default',
-                currentTheme: { bg: '#09090b', accent: '#52525b' }
+                currentTheme: { bg: '#09090b', accent: '#52525b' },
+                chapters: ['chapter-1'],
+                currentChapter: 'chapter-1'
             };
-            
-            // Write JSON (minus novel)
-            fs.writeFileSync(path.join(STORIES_DIR, `${id}.json`), JSON.stringify(newStory, null, 2));
-            
-            // Write empty MD
-            fs.writeFileSync(path.join(STORIES_DIR, `${id}.md`), `# ${newStory.title}\n\n`);
-            
-            // Add back empty novel string for frontend consistency
-            newStory.novel = "";
+
+            fs.writeFileSync(path.join(storyDir, 'config.json'), JSON.stringify(config, null, 2));
+
+            // Initialize first chapter
+            chapter.saveChapterData(id, 'chapter-1', {
+                interactive: '',
+                novel: '',
+                messages: [],
+                summary: { characters: [], locations: [], plotPoints: [], lastUpdated: new Date().toISOString() }
+            });
 
             // Emit WebSocket event
             const initiator = req.headers['x-user-id'];
             io.emit('story_created', { storyId: id, initiator });
 
-            res.status(201).json(newStory);
+            res.status(201).json({ ...config, interactive: [], novel: '', messages: [] });
         } catch (error) {
+            console.error('Create Story Error:', error.message);
             res.status(500).json({ error: 'Failed to create story' });
         }
     });
 
-    // Update an existing story (Splitting JSON and MD)
+    // Update an existing story
     router.put('/stories/:id', (req, res) => {
         try {
-            const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-            const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+            const config = chapter.getStoryConfig(req.params.id);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
 
-            if (!fs.existsSync(jsonPath)) return res.status(404).json({ error: 'Story not found' });
-            
             const fullData = req.body;
-            const novelContent = fullData.novel || "";
-            
-            // Extract structured data
-            const { novel, ...structuredData } = fullData;
-            
-            // Write Markdown file
-            fs.writeFileSync(mdPath, novelContent);
-            
-            // Write JSON file (without the long novel text)
-            fs.writeFileSync(jsonPath, JSON.stringify(structuredData, null, 2));
-            
-            // Calculate new hash
+            const { interactive, novel, messages, summary, ...newConfig } = fullData;
+
+            // Update config.json
+            chapter.saveStoryConfig(req.params.id, newConfig);
+
+            // Update current chapter data
+            // Convert interactive array back to MD if it's provided as an array
+            let interactiveMd = '';
+            if (Array.isArray(interactive)) {
+                interactiveMd = interactive.map(turn => `> ${turn.action}\n\n${turn.response}`).join('\n\n---\n\n');
+            } else {
+                interactiveMd = interactive || '';
+            }
+
+            chapter.saveChapterData(req.params.id, config.currentChapter || 'chapter-1', {
+                interactive: interactiveMd,
+                novel,
+                messages,
+                summary
+            });
+
             const newHash = calculateHash(JSON.stringify(fullData));
 
             // Emit WebSocket event to specific story room
@@ -274,25 +378,101 @@ module.exports = (io) => {
 
             res.json({ story: fullData, hash: newHash });
         } catch (error) {
+            console.error('Update Story Error:', error.message);
             res.status(500).json({ error: 'Failed to update story' });
         }
     });
 
-    // Delete a story (Cleanup both files)
+    // --- CHAPTER MANAGEMENT ENDPOINTS ---
+
+    router.post('/stories/:id/chapters', (req, res) => {
+        try {
+            const newChapter = chapter.createNewChapter(req.params.id);
+            res.status(201).json({ chapter: newChapter });
+        } catch (error) {
+            console.error('Create Chapter Error:', error.message);
+            res.status(500).json({ error: 'Failed to create new chapter' });
+        }
+    });
+
+    router.post('/stories/:id/chapters/switch', (req, res) => {
+        try {
+            const { chapterName } = req.body;
+            const config = chapter.getStoryConfig(req.params.id);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
+            
+            if (!config.chapters.includes(chapterName)) {
+                return res.status(400).json({ error: 'Chapter not found' });
+            }
+
+            config.currentChapter = chapterName;
+            chapter.saveStoryConfig(req.params.id, config);
+            
+            res.json({ success: true, currentChapter: chapterName });
+        } catch (error) {
+            console.error('Switch Chapter Error:', error.message);
+            res.status(500).json({ error: 'Failed to switch chapter' });
+        }
+    });
+
+    router.post('/stories/:id/chapters/recompose', async (req, res) => {
+        try {
+            const { model } = req.body;
+            const storyId = req.params.id;
+            const config = chapter.getStoryConfig(storyId);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
+            
+            const currentChapter = config.currentChapter || 'chapter-1';
+            const chData = chapter.getChapterData(storyId, currentChapter);
+            
+            const recomposePrompt = [
+                {
+                    role: "system",
+                    content: `You are a master novelist. Rewrite the following interactive story chapter into a continuous, immersive FIRST-PERSON narrative.
+                    Keep all major plot points and characters.
+                    The transcript provided is a series of actions and responses.
+                    Integrate them into a seamless story.
+                    Respond ONLY with the rewritten narrative text.`
+                },
+                {
+                    role: "user",
+                    content: `Chapter Context: ${JSON.stringify(chData.summary)}\n\nTranscript:\n${chData.interactive}`
+                }
+            ];
+
+            const response = await axios.post(OLLAMA_CHAT_URL, { model, messages: recomposePrompt, stream: false });
+            const newInteractiveMd = response.data.message.content;
+            
+            // Save back as a single block (or we could try to re-parse it, but a single block is what 'recompose' implies)
+            chapter.saveChapterData(storyId, currentChapter, { interactive: newInteractiveMd });
+            
+            res.json({ success: true, interactive: newInteractiveMd });
+        } catch (error) {
+            console.error('Recompose Chapter Error:', error.message);
+            res.status(500).json({ error: 'Failed to recompose chapter' });
+        }
+    });
+
+    // Delete a story
     router.delete('/stories/:id', (req, res) => {
         try {
-            const jsonPath = path.join(STORIES_DIR, `${req.params.id}.json`);
-            const mdPath = path.join(STORIES_DIR, `${req.params.id}.md`);
+            const storyDir = chapter.getStoryDir(req.params.id);
+            if (!storyDir) return res.status(404).json({ error: 'Story not found' });
 
-            if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
-            if (fs.existsSync(mdPath)) fs.unlinkSync(mdPath);
+            // Move to archive instead of deleting
+            const archiveDir = path.join(STORIES_DIR, 'archive');
+            if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir);
             
+            const folderName = path.basename(storyDir);
+            fs.renameSync(storyDir, path.join(archiveDir, folderName));
+
             // Emit WebSocket event
             const initiator = req.headers['x-user-id'];
             io.emit('story_deleted', { storyId: req.params.id, initiator });
 
             res.json({ success: true });
         } catch (error) {
+            console.error('Delete Story Error:', error.message);
             res.status(500).json({ error: 'Failed to delete story' });
         }
     });

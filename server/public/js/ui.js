@@ -74,6 +74,28 @@ export function switchTab(tab) {
     document.getElementById('tab-novel').classList.toggle('text-zinc-600', tab !== 'novel');
 }
 
+export function updateChapterSelection(config) {
+    const container = document.getElementById('chapter-selection');
+    const select = document.getElementById('chapter-select');
+    if (!container || !select) return;
+
+    if (!config || !config.chapters || config.chapters.length === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    select.innerHTML = '';
+    
+    config.chapters.forEach(ch => {
+        const opt = document.createElement('option');
+        opt.value = ch;
+        opt.textContent = ch.replace('chapter-', '');
+        if (ch === config.currentChapter) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
 export function applyMood(mood, theme) {
     const body = document.body;
     

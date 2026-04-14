@@ -19,7 +19,11 @@ window.app = {
     },
     createNewStory: story.createNewStory,
     renameStory: story.renameStory,
-    selectStory: story.selectStory,
+    switchChapter: story.switchChapter,
+    createNewChapter: story.createNewChapter,
+    recomposeChapter: story.recomposeChapter,
+    deleteStory: story.deleteStory,
+
     deleteStory: story.deleteStory,
     handleAction: story.handleAction,
     editProfile: ui.editProfile,
