@@ -69,9 +69,9 @@ export function switchTab(tab) {
     document.getElementById('view-interactive').classList.toggle('hidden', tab !== 'interactive');
     document.getElementById('view-novel').classList.toggle('hidden', tab !== 'novel');
     document.getElementById('tab-interactive').classList.toggle('tab-active', tab === 'interactive');
-    document.getElementById('tab-interactive').classList.toggle('text-zinc-600', tab !== 'interactive');
+    document.getElementById('tab-interactive').classList.toggle('text-zinc-400', tab !== 'interactive');
     document.getElementById('tab-novel').classList.toggle('tab-active', tab === 'novel');
-    document.getElementById('tab-novel').classList.toggle('text-zinc-600', tab !== 'novel');
+    document.getElementById('tab-novel').classList.toggle('text-zinc-400', tab !== 'novel');
 }
 
 export function updateChapterSelection(config) {

@@ -20,10 +20,10 @@ window.app = {
     createNewStory: story.createNewStory,
     renameStory: story.renameStory,
     switchChapter: story.switchChapter,
+    renameChapter: story.renameChapter,
     createNewChapter: story.createNewChapter,
     recomposeChapter: story.recomposeChapter,
-    deleteStory: story.deleteStory,
-
+    selectStory: story.selectStory,
     deleteStory: story.deleteStory,
     handleAction: story.handleAction,
     editProfile: ui.editProfile,
@@ -42,9 +42,9 @@ window.app = {
     switchNovelPerspective: (mode) => {
         story.setNovelPerspective(mode);
         document.getElementById('btn-1st-person').classList.toggle('perspective-active', mode === '1st');
-        document.getElementById('btn-1st-person').classList.toggle('text-zinc-600', mode !== '1st');
+        document.getElementById('btn-1st-person').classList.toggle('text-zinc-400', mode !== '1st');
         document.getElementById('btn-3rd-person').classList.toggle('perspective-active', mode === '3rd');
-        document.getElementById('btn-3rd-person').classList.toggle('text-zinc-600', mode !== '3rd');
+        document.getElementById('btn-3rd-person').classList.toggle('text-zinc-400', mode !== '3rd');
         story.renderStory();
     }
 };

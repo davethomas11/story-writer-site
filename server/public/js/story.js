@@ -51,7 +51,7 @@ export function handleRemoteActionUpdate(userId, text) {
         turnDiv.className = 'fade-in space-y-4 pt-8 border-t border-zinc-900/50 italic opacity-70';
         
         const actionEl = document.createElement('div');
-        actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-600 mb-2';
+        actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-500 mb-2';
         
         const responseEl = document.createElement('div');
         responseEl.className = 'text-zinc-400 font-light leading-relaxed space-y-4';
@@ -112,7 +112,7 @@ export async function loadLibrary() {
                         ${readers.length > 0 ? `<div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Active Readers: ${readerNames}"></div>` : ''}
                     </div>
                     <div class="flex justify-between items-center mt-1">
-                        <div class="text-[9px] text-zinc-600 uppercase tracking-tighter">${new Date(s.createdAt).toLocaleDateString()}</div>
+                        <div class="text-[9px] text-zinc-500 uppercase tracking-tighter">${new Date(s.createdAt).toLocaleDateString()}</div>
                         ${readers.length > 0 ? `<div class="text-[8px] text-emerald-600/70 font-semibold uppercase tracking-widest">${readers.length} Online</div>` : ''}
                     </div>
                 </div>
@@ -206,6 +206,38 @@ export async function switchChapter(chapterName) {
     }
 }
 
+export async function renameChapter() {
+    if (!currentStory || !currentStory.currentChapter) return;
+    
+    const currentName = currentStory.currentChapter.replace('chapter-', '');
+    const newName = prompt("Enter a new name for this chapter:", currentName);
+    
+    if (!newName || newName === currentName) return;
+
+    try {
+        ui.updateStatus('Renaming chapter...');
+        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/rename`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                oldName: currentStory.currentChapter,
+                newName: `chapter-${newName.trim().toLowerCase().replace(/\s+/g, '-')}` 
+            })
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            await selectStory(currentStory.id);
+        } else {
+            alert(data.error || "Failed to rename chapter");
+        }
+        ui.updateStatus('');
+    } catch (err) {
+        console.error(err);
+        alert("Failed to rename chapter");
+    }
+}
+
 export async function createNewChapter() {
     if (!currentStory) return;
     if (!confirm("Start a new chapter? This will clear the immediate AI memory but keep the overall story context.")) return;
@@ -252,7 +284,7 @@ export async function deleteStory(id, e) {
         if (currentStory?.id === id) {
             currentStory = null;
             document.getElementById('current-story-title').textContent = 'Select a Story';
-            document.getElementById('interactive-content').innerHTML = `<div class="text-zinc-600 italic text-center pt-24 flex flex-col items-center gap-4">
+            document.getElementById('interactive-content').innerHTML = `<div class="text-zinc-500 italic text-center pt-24 flex flex-col items-center gap-4">
                     Select a story from the library or create a new one to begin.
                     <button onclick="app.createNewStory()" class="text-[10px] uppercase tracking-widest border border-zinc-800 px-4 py-2 hover:bg-zinc-900 transition-colors">
                         + New Adventure
@@ -277,7 +309,7 @@ export function renderStory() {
     iContainer.innerHTML = '';
     
     if (currentStory.interactive.length === 0) {
-        iContainer.innerHTML = '<div class="text-zinc-600 italic text-center pt-24">The page is blank. Your first action defines the world.</div>';
+        iContainer.innerHTML = '<div class="text-zinc-500 italic text-center pt-24">The page is blank. Your first action defines the world.</div>';
     }
     
     currentStory.interactive.forEach(turn => {
@@ -320,7 +352,7 @@ export async function handleAction() {
     turnDiv.className = 'fade-in space-y-4 pt-8 border-t border-zinc-900/50';
     
     const actionEl = document.createElement('div');
-    actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-600 mb-2';
+    actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-500 mb-2';
     actionEl.textContent = `> ${action}`;
     turnDiv.appendChild(actionEl);
 
@@ -441,7 +473,7 @@ function appendNarrativeDOM(text, action) {
     
     if (action) {
         const actionEl = document.createElement('div');
-        actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-600 mb-2';
+        actionEl.className = 'text-[10px] uppercase tracking-widest text-zinc-500 mb-2';
         actionEl.textContent = `> ${action}`;
         div.appendChild(actionEl);
     }
