@@ -28,11 +28,18 @@ function buildPrompt(storyId, chapterName) {
     };
 
     // 2. Global & Chapter Summary as Context
+    const globalContext = chapter.getStoryContext(storyId);
+    
     const contextContent = `
     Global Story Summary: ${config.summary || 'Starting a new adventure.'}
+    
+    STORY BIBLE (Current established facts):
+    Characters: ${globalContext?.characters || 'Not yet defined.'}
+    Locations: ${globalContext?.locations || 'Not yet defined.'}
+    Key Plot Points: ${globalContext?.plot || 'Not yet defined.'}
+    World Lore: ${globalContext?.lore || 'Not yet defined.'}
+
     Current Chapter Summary: ${(chData.summary && chData.summary.plotPoints) ? chData.summary.plotPoints.join(', ') : 'No major events yet.'}
-    Characters: ${(chData.summary && chData.summary.characters) ? chData.summary.characters.join(', ') : ''}
-    Locations: ${(chData.summary && chData.summary.locations) ? chData.summary.locations.join(', ') : ''}
     `.trim();
 
     const contextMessage = {

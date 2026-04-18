@@ -10,8 +10,7 @@ export function initWebSocket(url = window.location.origin) {
     try {
         if (typeof io === 'undefined') return;
 
-        const query = api.userId ? { userId: api.userId } : {};
-        socket = io(url, { query });
+        socket = io(url);
 
         socket.on('session_established', (data) => {
             api.setUserId(data.userId);
@@ -20,6 +19,11 @@ export function initWebSocket(url = window.location.origin) {
         });
 
         socket.on('connect', () => {
+            // Re-sync userId if we have one after reconnection
+            if (api.userId) {
+                socket.emit('restore_session', { userId: api.userId });
+            }
+            
             // Only update status to Connected if we aren't in the middle of a "Waking" status from app.js
             const el = document.getElementById('connection-status');
             if (el && !el.textContent.includes('Waking')) {

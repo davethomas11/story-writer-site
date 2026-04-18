@@ -251,3 +251,23 @@ p {
         gap: 0.5rem !important;
     }
 }
+
+/* DAW Styles */
+.daw-column-highlight {
+    background-color: rgba(16, 185, 129, 0.08) !important;
+    border-left-color: rgba(16, 185, 129, 0.4) !important;
+    box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+.daw-note {
+    transition: box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.daw-note:hover {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+    background-color: #34d399 !important; /* Brighter emerald on hover */
+}
+
+#daw-grid > div {
+    min-height: 24px;
+}

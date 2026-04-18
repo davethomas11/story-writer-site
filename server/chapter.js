@@ -38,12 +38,14 @@ function getChapterData(storyId, chapterName) {
     const novelPath = path.join(chapterDir, 'novel.md');
     const messagesPath = path.join(chapterDir, 'messages.json');
     const summaryPath = path.join(chapterDir, 'summary.json');
+    const musicPath = path.join(chapterDir, 'music.json');
 
     return {
         interactive: fs.existsSync(interactivePath) ? fs.readFileSync(interactivePath, 'utf8') : '',
         novel: fs.existsSync(novelPath) ? fs.readFileSync(novelPath, 'utf8') : '',
         messages: fs.existsSync(messagesPath) ? JSON.parse(fs.readFileSync(messagesPath, 'utf8')) : [],
-        summary: fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')) : {}
+        summary: fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')) : {},
+        music: fs.existsSync(musicPath) ? JSON.parse(fs.readFileSync(musicPath, 'utf8')) : null
     };
 }
 
@@ -64,6 +66,9 @@ function saveChapterData(storyId, chapterName, data) {
     }
     if (data.summary !== undefined) {
         fs.writeFileSync(path.join(chapterDir, 'summary.json'), JSON.stringify(data.summary, null, 2));
+    }
+    if (data.music !== undefined) {
+        fs.writeFileSync(path.join(chapterDir, 'music.json'), JSON.stringify(data.music, null, 2));
     }
 }
 
@@ -100,6 +105,56 @@ function createNewChapter(storyId) {
     return newChapterName;
 }
 
+function renameChapter(storyId, oldName, newName) {
+    const storyDir = getStoryDir(storyId);
+    if (!storyDir) throw new Error('Story directory not found');
+
+    const config = getStoryConfig(storyId);
+    if (!config) throw new Error('Story config not found');
+
+    const oldChapterDir = path.join(storyDir, oldName);
+    const newChapterDir = path.join(storyDir, newName);
+
+    if (!fs.existsSync(oldChapterDir)) {
+        throw new Error(`Old chapter directory not found: ${oldName}`);
+    }
+
+    if (fs.existsSync(newChapterDir)) {
+        throw new Error(`New chapter directory already exists: ${newName}`);
+    }
+
+    // Rename the directory
+    fs.renameSync(oldChapterDir, newChapterDir);
+
+    // Update config
+    config.chapters = config.chapters.map(ch => ch === oldName ? newName : ch);
+    if (config.currentChapter === oldName) {
+        config.currentChapter = newName;
+    }
+    saveStoryConfig(storyId, config);
+
+    return newName;
+}
+
+function getStoryContext(storyId) {
+    const storyDir = getStoryDir(storyId);
+    if (!storyDir) return null;
+
+    const ctxPath = path.join(storyDir, 'context.json');
+    if (!fs.existsSync(ctxPath)) {
+        return { characters: '', locations: '', plot: '', lore: '' };
+    }
+    return JSON.parse(fs.readFileSync(ctxPath, 'utf8'));
+}
+
+function saveStoryContext(storyId, context) {
+    const storyDir = getStoryDir(storyId);
+    if (!storyDir) throw new Error('Story not found');
+
+    const ctxPath = path.join(storyDir, 'context.json');
+    fs.writeFileSync(ctxPath, JSON.stringify(context, null, 2));
+}
+
 module.exports = {
     getStoryDir,
     getChapterDir,
@@ -107,5 +162,8 @@ module.exports = {
     saveStoryConfig,
     getChapterData,
     saveChapterData,
-    createNewChapter
+    createNewChapter,
+    renameChapter,
+    getStoryContext,
+    saveStoryContext
 };

@@ -209,6 +209,75 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('Chapter Management', () => {
+    let storyId;
+    const STORIES_DIR = path.join(__dirname, 'stories');
+
+    beforeAll(async () => {
+      const response = await request(server)
+        .post('/api/stories')
+        .send({ title: 'Chapter Test' });
+      storyId = response.body.id;
+    });
+
+    afterAll(() => {
+      if (storyId) {
+        const folders = fs.readdirSync(STORIES_DIR);
+        const folder = folders.find(f => f.endsWith(storyId));
+        if (folder) {
+          fs.rmSync(path.join(STORIES_DIR, folder), { recursive: true, force: true });
+        }
+      }
+    });
+
+    test('POST /api/stories/:id/chapters should create a new chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters`);
+      
+      expect(response.status).toBe(201);
+      expect(response.body.chapter).toBe('chapter-2');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-2'))).toBe(true);
+    });
+
+    test('POST /api/stories/:id/chapters/rename should rename a chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters/rename`)
+        .send({ oldName: 'chapter-1', newName: 'chapter-intro' });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.newName).toBe('chapter-intro');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-intro'))).toBe(true);
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-1'))).toBe(false);
+
+      // Verify config.json was updated
+      const config = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, folder, 'config.json'), 'utf8'));
+      expect(config.chapters).toContain('chapter-intro');
+      expect(config.chapters).not.toContain('chapter-1');
+    });
+
+    test('POST /api/stories/:id/chapters/switch should update current chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters/switch`)
+        .send({ chapterName: 'chapter-2' });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.currentChapter).toBe('chapter-2');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      const config = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, folder, 'config.json'), 'utf8'));
+      expect(config.currentChapter).toBe('chapter-2');
+    });
+  });
+
   describe('AI Proxy Endpoints', () => {
     test('POST /api/chat should proxy to Ollama', async () => {
       const mockResponse = { message: { content: 'Hello explorer!' } };

@@ -13,7 +13,7 @@ function initSocket(server) {
     const presence = new Map();
 
     io.on('connection', (socket) => {
-        let userId = socket.handshake.query.userId || `user-${Math.random().toString(36).substr(2, 9)}`;
+        let userId = `user-${Math.random().toString(36).substr(2, 9)}`;
 
         const getStoredUsername = (uid) => {
             const userPath = path.join(__dirname, 'users', `${uid}.json`);
@@ -25,14 +25,27 @@ function initSocket(server) {
             return null;
         };
 
-        presence.set(userId, { 
-            userId,
-            socketId: socket.id, 
-            storyId: null,
-            username: getStoredUsername(userId) || `Explorer ${userId.slice(-4)}`
-        });
+        const setupUser = (uid) => {
+            userId = uid;
+            presence.set(userId, { 
+                userId,
+                socketId: socket.id, 
+                storyId: null,
+                username: getStoredUsername(userId) || `Explorer ${userId.slice(-4)}`
+            });
+            socket.emit('session_established', { userId });
+            io.emit('presence_updated', Array.from(presence.values()));
+        };
 
-        socket.emit('session_established', { userId });
+        // Initial setup with a random ID
+        setupUser(userId);
+
+        socket.on('restore_session', ({ userId: existingUserId }) => {
+            if (existingUserId && existingUserId !== userId) {
+                presence.delete(userId); // Remove the temporary session
+                setupUser(existingUserId);
+            }
+        });
 
         socket.on('update_username', ({ username }) => {
             const user = presence.get(userId);

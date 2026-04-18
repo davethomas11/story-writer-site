@@ -1,6 +1,8 @@
 import * as api from './api.js';
 import * as ui from './ui.js';
 import { joinStoryRoom, notifyTyping, notifyStopTyping, sendActionUpdate, sendNarrativeUpdate } from './websocket.js';
+import * as music from './music.js';
+import { settings } from './settings.js';
 
 export let currentStory = null;
 export let currentStoryHash = null;
@@ -126,31 +128,51 @@ export async function loadLibrary() {
 }
 
 export async function createNewStory() {
-    const title = prompt("Enter a title for your adventure:", "A New Beginning");
-    if (!title) return;
-    try {
-        const story = await api.createStory(title);
-        await selectStory(story.id);
-        loadLibrary();
-        if (window.innerWidth < 768) ui.toggleLibrary();
-    } catch (err) { alert("Failed to create story"); }
+    ui.showModal({
+        title: "New Adventure",
+        message: "Enter a title for your adventure:",
+        inputValue: "A New Beginning",
+        showInput: true,
+        showCancel: true
+    }).then(async (title) => {
+        if (!title) return;
+        try {
+            ui.showLoading("Creating world...");
+            const story = await api.createStory(title);
+            await selectStory(story.id);
+            loadLibrary();
+            if (window.innerWidth < 768) ui.toggleLibrary();
+        } catch (err) { 
+            ui.showModal({ title: "Error", message: "Failed to create story" });
+        } finally {
+            ui.hideLoading();
+        }
+    });
 }
 
 export async function renameStory() {
     if (!currentStory) return;
-    const newTitle = prompt("Enter a new title for this adventure:", currentStory.title);
-    if (!newTitle || newTitle === currentStory.title) return;
+    
+    ui.showModal({
+        title: "Rename Adventure",
+        message: "Enter a new title for this adventure:",
+        inputValue: currentStory.title,
+        showInput: true,
+        showCancel: true
+    }).then(async (newTitle) => {
+        if (!newTitle || newTitle === currentStory.title) return;
 
-    try {
-        currentStory.title = newTitle;
-        const response = await api.updateStory(currentStory.id, currentStory);
-        if (response?.hash) setCurrentStoryHash(response.hash);
-        
-        document.getElementById('current-story-title').textContent = currentStory.title;
-        loadLibrary();
-    } catch (err) {
-        alert("Failed to rename story");
-    }
+        try {
+            currentStory.title = newTitle;
+            const response = await api.updateStory(currentStory.id, currentStory);
+            if (response?.hash) setCurrentStoryHash(response.hash);
+            
+            document.getElementById('current-story-title').textContent = currentStory.title;
+            loadLibrary();
+        } catch (err) {
+            ui.showModal({ title: "Error", message: "Failed to rename story" });
+        }
+    });
 }
 
 export async function selectStory(id) {
@@ -170,6 +192,14 @@ export async function selectStory(id) {
         input.removeEventListener('input', handleUserTyping);
         input.addEventListener('input', handleUserTyping);
         
+        // Add novel editor listener
+        const nBody = document.getElementById('novel-body');
+        nBody.removeEventListener('input', handleNovelInput);
+        nBody.addEventListener('input', handleNovelInput);
+        
+        nBody.removeEventListener('blur', saveNovel);
+        nBody.addEventListener('blur', saveNovel);
+        
         if (!currentStory.messages) currentStory.messages = [];
         
         ui.updateChapterSelection(currentStory);
@@ -184,122 +214,284 @@ export async function selectStory(id) {
 
         // Join the WebSocket room for this story
         joinStoryRoom(id);
+
+        // Load Story Context
+        loadStoryContext(id);
+
+        // Music Engine Integration
+        if (currentStory.music) {
+            music.playScore(currentStory.music);
+            ui.renderMusicEditor(currentStory.music);
+            if (settings.musicEnabled && music.isStarted) {
+                // Already started, playScore will handle it
+            }
+        }
     } catch (err) { 
         console.error("Failed to load story:", err);
-        alert("Failed to load story"); 
+        ui.showModal({ title: "Error", message: "Failed to load story" });
     }
+}
+
+// --- STORY CONTEXT MANAGEMENT ---
+
+let currentContext = null;
+
+export async function loadStoryContext(storyId) {
+    try {
+        const response = await api.fetchStoryContext(storyId);
+        currentContext = response.context;
+        renderStoryContext();
+    } catch (err) {
+        console.error("Failed to load story context", err);
+    }
+}
+
+export function renderStoryContext() {
+    if (!currentContext) return;
+    
+    document.getElementById('ctx-characters').value = currentContext.characters || '';
+    document.getElementById('ctx-locations').value = currentContext.locations || '';
+    document.getElementById('ctx-plot').value = currentContext.plot || '';
+    document.getElementById('ctx-lore').value = currentContext.lore || '';
+}
+
+export async function saveStoryContext() {
+    if (!currentStory) return;
+    
+    const context = {
+        characters: document.getElementById('ctx-characters').value,
+        locations: document.getElementById('ctx-locations').value,
+        plot: document.getElementById('ctx-plot').value,
+        lore: document.getElementById('ctx-lore').value
+    };
+
+    try {
+        ui.updateStatus('Saving context...');
+        await api.saveStoryContext(currentStory.id, context);
+        currentContext = context;
+        ui.updateStatus('Context saved.');
+        setTimeout(() => ui.updateStatus(''), 2000);
+    } catch (err) {
+        ui.showModal({ title: "Error", message: "Failed to save story context" });
+    }
+}
+
+export async function generateStoryContext(category = null) {
+    if (!currentStory || !selectedModel) return;
+
+    const title = category ? `Regenerate ${category.charAt(0).toUpperCase() + category.slice(1)}` : "Generate Story Bible";
+    const msg = category 
+        ? `Ask the AI to analyze the story and update the ${category} section? This will overwrite your current unsaved changes in this field.`
+        : "Ask the AI to analyze the entire story so far and fill out all context fields? This will overwrite your current unsaved changes in the context editor.";
+
+    ui.showModal({
+        title,
+        message: msg,
+        showCancel: true
+    }).then(async (confirmed) => {
+        if (!confirmed) return;
+
+        try {
+            ui.showLoading(category ? `Analyzing ${category}...` : "Analyzing story history...");
+            const response = await api.generateStoryContext(currentStory.id, selectedModel, category);
+            
+            if (category) {
+                currentContext[category] = response.context[category];
+            } else {
+                currentContext = response.context;
+            }
+            
+            renderStoryContext();
+            ui.updateStatus(category ? `${category} updated.` : 'Context generated.');
+            setTimeout(() => ui.updateStatus(''), 2000);
+        } catch (err) {
+            console.error(err);
+            ui.showModal({ title: "Error", message: `Failed to generate ${category || 'context'}` });
+        } finally {
+            ui.hideLoading();
+        }
+    });
 }
 
 export async function switchChapter(chapterName) {
     if (!currentStory) return;
     try {
         ui.updateStatus('Switching chapter...');
-        await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/switch`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chapterName })
-        });
+        await api.switchChapter(currentStory.id, chapterName);
         await selectStory(currentStory.id);
         ui.updateStatus('');
     } catch (err) {
-        alert("Failed to switch chapter");
+        ui.showModal({ title: "Error", message: "Failed to switch chapter" });
     }
 }
 
 export async function renameChapter() {
     if (!currentStory || !currentStory.currentChapter) return;
-    
-    const currentName = currentStory.currentChapter.replace('chapter-', '');
-    const newName = prompt("Enter a new name for this chapter:", currentName);
-    
-    if (!newName || newName === currentName) return;
 
-    try {
-        ui.updateStatus('Renaming chapter...');
-        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/rename`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                oldName: currentStory.currentChapter,
-                newName: `chapter-${newName.trim().toLowerCase().replace(/\s+/g, '-')}` 
-            })
-        });
-        
-        const data = await res.json();
-        if (data.success) {
+    const currentName = currentStory.currentChapter.replace('chapter-', '');
+    
+    ui.showModal({
+        title: "Rename Chapter",
+        message: "Enter a new name for this chapter:",
+        inputValue: currentName,
+        showInput: true,
+        showCancel: true
+    }).then(async (newName) => {
+        if (!newName || newName === currentName) return;
+
+        try {
+            ui.updateStatus('Renaming chapter...');
+            const newChapterId = `chapter-${newName.trim().toLowerCase().replace(/\s+/g, '-')}`;
+            await api.renameChapter(currentStory.id, currentStory.currentChapter, newChapterId);
+
             await selectStory(currentStory.id);
-        } else {
-            alert(data.error || "Failed to rename chapter");
+            ui.updateStatus('');
+        } catch (err) {
+            console.error(err);
+            ui.showModal({ title: "Error", message: err.message || "Failed to rename chapter" });
         }
-        ui.updateStatus('');
-    } catch (err) {
-        console.error(err);
-        alert("Failed to rename chapter");
-    }
+    });
 }
 
 export async function createNewChapter() {
     if (!currentStory) return;
-    if (!confirm("Start a new chapter? This will clear the immediate AI memory but keep the overall story context.")) return;
-    try {
-        ui.updateStatus('Creating new chapter...');
-        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters`, {
-            method: 'POST'
-        });
-        const data = await res.json();
-        await selectStory(currentStory.id);
-        ui.updateStatus('');
-    } catch (err) {
-        alert("Failed to create chapter");
-    }
+    
+    ui.showModal({
+        title: "New Chapter",
+        message: "Start a new chapter? This will clear the immediate AI memory but keep the overall story context.",
+        showCancel: true
+    }).then(async (confirmed) => {
+        if (!confirmed) return;
+        try {
+            ui.showLoading("Drafting new chapter...");
+            ui.updateStatus('Creating new chapter...');
+            await api.createChapter(currentStory.id);
+            await selectStory(currentStory.id);
+            ui.updateStatus('');
+        } catch (err) {
+            ui.showModal({ title: "Error", message: "Failed to create chapter" });
+        } finally {
+            ui.hideLoading();
+        }
+    });
 }
 
 export async function recomposeChapter() {
     if (!currentStory || !selectedModel) return;
-    if (!confirm("Ask the AI to rewrite this entire chapter into a seamless narrative? This will replace the current turn-by-turn interactive view for this chapter.")) return;
     
-    try {
-        ui.updateStatus('Recomposing chapter...');
-        const res = await fetch(`${api.API_BASE}/stories/${currentStory.id}/chapters/recompose`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: selectedModel })
-        });
-        const data = await res.json();
-        if (data.success) {
-            await selectStory(currentStory.id);
+    // Determine which perspective we are recomposing based on current view
+    const isInteractiveView = !document.getElementById('view-interactive').classList.contains('hidden');
+    const perspective = isInteractiveView ? '1st' : novelPerspective;
+
+    ui.showModal({
+        title: "Recompose Narrative",
+        message: `Ask the AI to rewrite the current chapter as a seamless ${perspective === '1st' ? 'FIRST-PERSON' : 'THIRD-PERSON'} narrative? This will replace the current ${perspective === '1st' ? 'interactive' : 'novel'} content for this chapter.`,
+        showCancel: true
+    }).then(async (confirmed) => {
+        if (!confirmed) return;
+
+        try {
+            ui.showLoading(`Recomposing ${perspective === '1st' ? 'Interactive' : 'Novel'}...`);
+            ui.updateStatus('Recomposing chapter...');
+            const data = await api.recomposeChapter(currentStory.id, selectedModel, perspective);
+            if (data.success) {
+                await selectStory(currentStory.id);
+            }
+            ui.updateStatus('');
+        } catch (err) {
+            console.error(err);
+            ui.showModal({ title: "Error", message: "Failed to recompose chapter" });
+        } finally {
+            ui.hideLoading();
         }
-        ui.updateStatus('');
-    } catch (err) {
-        console.error(err);
-        alert("Failed to recompose chapter");
-    }
+    });
 }
 
 export async function deleteStory(id, e) {
     if (e) e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this adventure?")) return;
-    try {
-        await api.deleteStory(id);
-        if (currentStory?.id === id) {
-            currentStory = null;
-            document.getElementById('current-story-title').textContent = 'Select a Story';
-            document.getElementById('interactive-content').innerHTML = `<div class="text-zinc-500 italic text-center pt-24 flex flex-col items-center gap-4">
-                    Select a story from the library or create a new one to begin.
-                    <button onclick="app.createNewStory()" class="text-[10px] uppercase tracking-widest border border-zinc-800 px-4 py-2 hover:bg-zinc-900 transition-colors">
-                        + New Adventure
-                    </button>
-                </div>`;
-            document.getElementById('input-area').classList.add('opacity-50', 'pointer-events-none');
-            ui.applyMood('default');
-            
-            // Clear storyId from URL
-            const url = new URL(window.location);
-            url.searchParams.delete('storyId');
-            window.history.pushState({}, '', url);
+    
+    ui.showModal({
+        title: "Delete Adventure",
+        message: "Are you sure you want to delete this adventure? This cannot be easily undone.",
+        showCancel: true
+    }).then(async (confirmed) => {
+        if (!confirmed) return;
+        try {
+            await api.deleteStory(id);
+            if (currentStory?.id === id) {
+                currentStory = null;
+                document.getElementById('current-story-title').textContent = 'Select a Story';
+                document.getElementById('interactive-content').innerHTML = `<div class="text-zinc-500 italic text-center pt-24 flex flex-col items-center gap-4">
+                        Select a story from the library or create a new one to begin.
+                        <button onclick="app.createNewStory()" class="text-[10px] uppercase tracking-widest border border-zinc-800 px-4 py-2 hover:bg-zinc-900 transition-colors">
+                            + New Adventure
+                        </button>
+                    </div>`;
+                document.getElementById('input-area').classList.add('opacity-50', 'pointer-events-none');
+                ui.applyMood('default');
+                
+                // Clear storyId from URL
+                const url = new URL(window.location);
+                url.searchParams.delete('storyId');
+                window.history.pushState({}, '', url);
+            }
+            loadLibrary();
+        } catch (err) { 
+            ui.showModal({ title: "Error", message: "Failed to delete story" });
         }
-        loadLibrary();
-    } catch (err) { alert("Failed to delete story"); }
+    });
+}
+
+// --- NOVEL EDITOR LOGIC ---
+
+let novelSaveTimeout = null;
+
+function handleNovelInput() {
+    if (!currentStory) return;
+    
+    ui.updateStatus('Changes detected...');
+    
+    if (novelSaveTimeout) clearTimeout(novelSaveTimeout);
+    
+    novelSaveTimeout = setTimeout(async () => {
+        await saveNovel();
+        novelSaveTimeout = null;
+    }, 2000);
+}
+
+async function saveNovel() {
+    if (!currentStory) return;
+    
+    const nBody = document.getElementById('novel-body');
+    // We use innerText to get the plain text with line breaks preserved
+    const content = nBody.innerText.trim();
+    
+    ui.updateStatus('Saving novel...');
+    
+    try {
+        if (novelPerspective === '3rd') {
+            currentStory.novel = content;
+        } else {
+            // For 1st person, we'll save it as a string. 
+            // Note: This replaces the structured interactive array with a flat string.
+            // The backend parseInteractive will turn this into a single 'Beginning' turn
+            // unless the user manually adds "> Action" and "---" separators.
+            currentStory.interactive = content;
+        }
+        
+        const response = await api.updateStory(currentStory.id, currentStory);
+        if (response?.hash) setCurrentStoryHash(response.hash);
+        ui.updateStatus('Novel saved.');
+        setTimeout(() => {
+            const statusEl = document.getElementById('status-msg');
+            if (statusEl && statusEl.textContent === 'Novel saved.') {
+                ui.updateStatus('');
+            }
+        }, 2000);
+    } catch (err) {
+        console.error("Failed to save novel", err);
+        ui.updateStatus('Failed to save novel.');
+    }
 }
 
 export function renderStory() {
@@ -312,15 +504,25 @@ export function renderStory() {
         iContainer.innerHTML = '<div class="text-zinc-500 italic text-center pt-24">The page is blank. Your first action defines the world.</div>';
     }
     
-    currentStory.interactive.forEach(turn => {
+    // Always render interactive as objects for the interactive tab
+    const interactiveArray = Array.isArray(currentStory.interactive) 
+        ? currentStory.interactive 
+        : [{ action: 'Beginning', response: currentStory.interactive }];
+
+    interactiveArray.forEach(turn => {
         appendNarrativeDOM(turn.response, turn.action);
     });
 
     const nBody = document.getElementById('novel-body');
+    
+    // Don't overwrite if the user is currently typing in the novel editor
+    if (document.activeElement === nBody) return;
+
     if (novelPerspective === '3rd') {
         nBody.innerHTML = currentStory.novel.split('\n\n').map(p => p.trim() ? `<p class="mb-6">${p}</p>` : '').join('');
     } else {
-        nBody.innerHTML = currentStory.interactive.map(turn => 
+        // If it's 1st person perspective in the novel tab, show the responses only (like a book)
+        nBody.innerHTML = interactiveArray.map(turn => 
             turn.response.split('\n\n').map(p => `<p class="mb-6">${p}</p>`).join('')
         ).join('');
     }
@@ -447,6 +649,16 @@ export async function handleAction() {
         currentStory.currentTheme = theme;
 
         ui.applyMood(mood, theme);
+
+        // Music Generation Trigger
+        const forceRegen = document.getElementById('toggle-regen-music')?.checked;
+        const moodChanged = currentStory.currentMood !== mood;
+        
+        if (settings.musicEnabled && (forceRegen || (settings.autoMusic && moodChanged))) {
+            const summaryText = currentStory.summary?.plotPoints?.join(' ') || narrativeText;
+            music.generateNewMusic(currentStory.id, mood, summaryText);
+        }
+
         const updateResponse = await api.updateStory(currentStory.id, currentStory);
         if (updateResponse && updateResponse.hash) {
             setCurrentStoryHash(updateResponse.hash);

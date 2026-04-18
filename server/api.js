@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const { sanitizeFolderName } = require('./utils');
+const { sanitizeFolderName, generateMidi } = require('./utils');
 const chapter = require('./chapter');
 
 const context = require('./context');
@@ -290,7 +290,8 @@ module.exports = (io) => {
                 interactive: parseInteractive(chData.interactive),
                 novel: chData.novel,
                 messages: chData.messages,
-                summary: chData.summary
+                summary: chData.summary,
+                music: chData.music
             };
 
             const hash = calculateHash(JSON.stringify(story));
@@ -349,7 +350,7 @@ module.exports = (io) => {
             if (!config) return res.status(404).json({ error: 'Story not found' });
 
             const fullData = req.body;
-            const { interactive, novel, messages, summary, ...newConfig } = fullData;
+            const { interactive, novel, messages, summary, music, ...newConfig } = fullData;
 
             // Update config.json
             chapter.saveStoryConfig(req.params.id, newConfig);
@@ -367,8 +368,16 @@ module.exports = (io) => {
                 interactive: interactiveMd,
                 novel,
                 messages,
-                summary
+                summary,
+                music
             });
+
+            // Generate MIDI if music JSON is present
+            if (music) {
+                const storyDir = chapter.getStoryDir(req.params.id);
+                const chDir = chapter.getChapterDir(storyDir, config.currentChapter || 'chapter-1');
+                generateMidi(music, path.join(chDir, 'music.mid'));
+            }
 
             const newHash = calculateHash(JSON.stringify(fullData));
 
@@ -380,6 +389,85 @@ module.exports = (io) => {
         } catch (error) {
             console.error('Update Story Error:', error.message);
             res.status(500).json({ error: 'Failed to update story' });
+        }
+    });
+
+    // --- MUSIC GENERATION ---
+
+    router.post('/stories/:id/music/generate', async (req, res) => {
+        try {
+            const { model, mood, summary } = req.body;
+            const storyId = req.params.id;
+            
+            console.log(`[MusicGen] Generating for story ${storyId} using model ${model}. Mood: ${mood}`);
+
+            if (!model) {
+                return res.status(400).json({ error: "Missing model for music generation" });
+            }
+            
+            const systemPrompt = `You are a cinematic composer and MIDI expert.
+            TASK: Compose a multi-track musical score in JSON format that reflects the given MOOD and STORY SUMMARY.
+            
+            JSON SCHEMA:
+            {
+              "bpm": number (60-140),
+              "tracks": [
+                {
+                  "name": "Atmosphere", 
+                  "instrument": "pad",
+                  "notes": [{ "pitch": "C3", "duration": "1", "tick": 0 }]
+                },
+                {
+                  "name": "Lead",
+                  "instrument": "synth",
+                  "notes": [{ "pitch": "E4", "duration": "4", "tick": 0 }]
+                }
+              ]
+            }
+            
+            RULES:
+            - Use 320 ticks per quarter note for timing (1280 ticks per bar).
+            - notes duration should be "1" (whole), "2" (half), "4" (quarter), "8" (eighth).
+            - Pitch should be standard MIDI notation (e.g., C4, Eb3).
+            - Respond ONLY with the JSON object. No conversational filler.`;
+
+            const prompt = [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `MOOD: ${mood || 'mysterious'}\nSUMMARY: ${summary || 'A lone explorer in a strange land.'}` }
+            ];
+
+            const response = await axios.post(OLLAMA_CHAT_URL, { 
+                model, 
+                messages: prompt, 
+                stream: false
+            });
+
+            let musicJson = null;
+            const content = response.data.message.content.trim();
+            console.log(`[MusicGen] AI Response received. Length: ${content.length}`);
+            
+            // Extract JSON from response
+            try {
+                const match = content.match(/\{[\s\S]*\}/);
+                if (match) {
+                    musicJson = JSON.parse(match[0]);
+                    console.log(`[MusicGen] Successfully parsed JSON score.`);
+                } else {
+                    console.error("[MusicGen] No JSON found in AI response:", content);
+                    throw new Error("No JSON found");
+                }
+            } catch (e) {
+                console.error("[MusicGen] Failed to parse music JSON from AI", e);
+                return res.status(500).json({ error: "AI failed to generate valid musical score.", details: e.message });
+            }
+
+            res.json({ music: musicJson });
+        } catch (error) {
+            console.error('Music Generation Error:', error.message);
+            if (error.response) {
+                console.error('Ollama Response Error:', error.response.data);
+            }
+            res.status(500).json({ error: 'Failed to generate music', details: error.message });
         }
     });
 
@@ -415,9 +503,22 @@ module.exports = (io) => {
         }
     });
 
+    router.post('/stories/:id/chapters/rename', (req, res) => {
+        try {
+            const { oldName, newName } = req.body;
+            if (!oldName || !newName) return res.status(400).json({ error: 'Missing oldName or newName' });
+
+            const renamed = chapter.renameChapter(req.params.id, oldName, newName);
+            res.json({ success: true, newName: renamed });
+        } catch (error) {
+            console.error('Rename Chapter Error:', error.message);
+            res.status(500).json({ error: error.message || 'Failed to rename chapter' });
+        }
+    });
+
     router.post('/stories/:id/chapters/recompose', async (req, res) => {
         try {
-            const { model } = req.body;
+            const { model, perspective } = req.body;
             const storyId = req.params.id;
             const config = chapter.getStoryConfig(storyId);
             if (!config) return res.status(404).json({ error: 'Story not found' });
@@ -425,31 +526,146 @@ module.exports = (io) => {
             const currentChapter = config.currentChapter || 'chapter-1';
             const chData = chapter.getChapterData(storyId, currentChapter);
             
+            let systemPrompt = "";
+            if (perspective === '1st') {
+                systemPrompt = `You are a master novelist. Rewrite the following interactive story chapter into a continuous, immersive FIRST-PERSON narrative.
+                Keep all major plot points and characters.
+                Integrate the transcript into a seamless story.
+                Respond ONLY with the rewritten narrative text.
+                Use "I" and "WE" pronouns from perspective of the user.`;
+            } else {
+                systemPrompt = `You are a master novelist. 
+                TASK: Transform the following story from FIRST-PERSON into a formal THIRD-PERSON literary narrative.
+                - You MUST change all "I/Me/My/We" pronouns into character names or "He/She/They".
+                - Keep all major plot points and characters.
+                - Integrate the transcript into a seamless, high-quality book chapter.
+                - Respond ONLY with the rewritten narrative text.`;
+            }
+
             const recomposePrompt = [
-                {
-                    role: "system",
-                    content: `You are a master novelist. Rewrite the following interactive story chapter into a continuous, immersive FIRST-PERSON narrative.
-                    Keep all major plot points and characters.
-                    The transcript provided is a series of actions and responses.
-                    Integrate them into a seamless story.
-                    Respond ONLY with the rewritten narrative text.`
-                },
+                { role: "system", content: systemPrompt },
                 {
                     role: "user",
-                    content: `Chapter Context: ${JSON.stringify(chData.summary)}\n\nTranscript:\n${chData.interactive}`
+                    content: `Here is the chapter transcript (JSON format):\n${JSON.stringify(chData.messages)}`
                 }
             ];
 
-            const response = await axios.post(OLLAMA_CHAT_URL, { model, messages: recomposePrompt, stream: false });
-            const newInteractiveMd = response.data.message.content;
+            const response = await axios.post(OLLAMA_CHAT_URL, { 
+                model, 
+                messages: recomposePrompt, 
+                stream: false,
+                options: {
+                    num_ctx: 32768 // Increase context window for large transcripts
+                }
+            });
             
-            // Save back as a single block (or we could try to re-parse it, but a single block is what 'recompose' implies)
-            chapter.saveChapterData(storyId, currentChapter, { interactive: newInteractiveMd });
+            if (!response.data.message || !response.data.message.content) {
+                throw new Error("AI returned an empty response. Check if the transcript is too long or the model is overloaded.");
+            }
+
+            const newMd = response.data.message.content.trim();
             
-            res.json({ success: true, interactive: newInteractiveMd });
+            // Save only the relevant version
+            const updates = {};
+            if (perspective === '1st') {
+                updates.interactive = newMd;
+            } else {
+                updates.novel = newMd;
+            }
+            
+            chapter.saveChapterData(storyId, currentChapter, updates);
+            
+            res.json({ success: true, content: newMd });
         } catch (error) {
             console.error('Recompose Chapter Error:', error.message);
-            res.status(500).json({ error: 'Failed to recompose chapter' });
+            res.status(500).json({ error: error.message || 'Failed to recompose chapter' });
+        }
+    });
+
+    // --- STORY CONTEXT ---
+
+    router.get('/stories/:id/context', (req, res) => {
+        try {
+            const ctx = chapter.getStoryContext(req.params.id);
+            res.json({ context: ctx });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to fetch context' });
+        }
+    });
+
+    router.post('/stories/:id/context', (req, res) => {
+        try {
+            chapter.saveStoryContext(req.params.id, req.body.context);
+            res.json({ success: true });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to save context' });
+        }
+    });
+
+    router.post('/stories/:id/context/generate', async (req, res) => {
+        try {
+            const { model, category } = req.body;
+            const storyId = req.params.id;
+            const config = chapter.getStoryConfig(storyId);
+            if (!config) return res.status(404).json({ error: 'Story not found' });
+            
+            // Gather all content from all chapters
+            let fullTranscript = "";
+            config.chapters.forEach(ch => {
+                const data = chapter.getChapterData(storyId, ch);
+                // We use messages for better context if available, fallback to interactive md
+                if (data.messages && data.messages.length > 0) {
+                    data.messages.forEach(m => {
+                        fullTranscript += `${m.role.toUpperCase()}: ${m.content}\n`;
+                    });
+                } else {
+                    fullTranscript += `### Chapter: ${ch}\n${data.interactive}\n\n`;
+                }
+            });
+
+            const allCategories = [
+                { id: 'characters', label: 'Characters', prompt: 'Provide a concise list of characters found in the transcript. For each, give a short 1-sentence description. Format: "Name - trait. role. current state". Example: "Gondoldore - protagonist. Wizard. Just starting journey"' },
+                { id: 'locations', label: 'Locations', prompt: 'List the key locations visited or mentioned. Provide a 1-sentence atmospheric description for each.' },
+                { id: 'plot', label: 'Plot Summary', prompt: 'Provide a concise, 2-3 paragraph summary of the major plot points and narrative arc discovered in the transcript.' },
+                { id: 'lore', label: 'Lore & World Rules', prompt: 'Identify any unique world-building elements, magic systems, technology, or historical facts mentioned.' }
+            ];
+
+            const categoriesToProcess = category 
+                ? allCategories.filter(c => c.id === category)
+                : allCategories;
+
+            const currentCtx = chapter.getStoryContext(storyId);
+            const result = { ...currentCtx };
+
+            for (const cat of categoriesToProcess) {
+                const prompt = [
+                    {
+                        role: "system",
+                        content: `You are an expert story analyst. ${cat.prompt}
+                        Base your analysis strictly on the provided story transcript.
+                        Respond ONLY with the text for the ${cat.label} section.
+                        Do not include headers, JSON, or conversational filler.`
+                    },
+                    {
+                        role: "user",
+                        content: `Story Transcript:\n${fullTranscript}`
+                    }
+                ];
+
+                const response = await axios.post(OLLAMA_CHAT_URL, { 
+                    model, 
+                    messages: prompt, 
+                    stream: false,
+                    options: { num_ctx: 32768 }
+                });
+                result[cat.id] = response.data.message.content.trim();
+            }
+            
+            chapter.saveStoryContext(storyId, result);
+            res.json({ success: true, context: result });
+        } catch (error) {
+            console.error('Generate Context Error:', error.message);
+            res.status(500).json({ error: 'Failed to generate context' });
         }
     });
 
