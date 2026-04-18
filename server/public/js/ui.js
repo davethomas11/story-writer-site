@@ -3,15 +3,111 @@ import { updateUsername } from './websocket.js';
 import { moodMap } from './config.js';
 
 export function editProfile() {
-    const newName = prompt("Enter your new explorer name:", api.username);
-    if (newName && api.userId) {
-        api.updateProfile(api.userId, newName)
-            .then(data => {
-                api.setUsername(data.username);
-                updateUsername(data.username); // Sync with WebSocket session
-            })
-            .catch(err => alert("Failed to update profile"));
+    showModal({
+        title: "Update Profile",
+        message: "Enter your new explorer name:",
+        inputValue: api.username,
+        showInput: true
+    }).then(newName => {
+        if (newName && api.userId) {
+            api.updateProfile(api.userId, newName)
+                .then(data => {
+                    api.setUsername(data.username);
+                    updateUsername(data.username); // Sync with WebSocket session
+                })
+                .catch(err => alert("Failed to update profile"));
+        }
+    });
+}
+
+// --- CUSTOM DIALOGS & OVERLAYS ---
+
+export function showLoading(msg = "Processing...") {
+    const overlay = document.getElementById('loading-overlay');
+    const msgEl = document.getElementById('loading-message');
+    if (overlay && msgEl) {
+        msgEl.textContent = msg;
+        overlay.classList.add('opacity-100');
+        overlay.classList.remove('pointer-events-none');
     }
+}
+
+export function hideLoading() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+        overlay.classList.remove('opacity-100');
+        overlay.classList.add('pointer-events-none');
+    }
+}
+
+let modalResolver = null;
+
+export function showModal({ title = "System Message", message = "", showCancel = false, showInput = false, inputValue = "" }) {
+    const modal = document.getElementById('custom-modal');
+    const container = document.getElementById('modal-container');
+    const titleEl = document.getElementById('modal-title');
+    const messageEl = document.getElementById('modal-message');
+    const inputContainer = document.getElementById('modal-input-container');
+    const inputEl = document.getElementById('modal-input');
+    const cancelBtn = document.getElementById('modal-cancel');
+
+    if (!modal) return Promise.reject("Modal not found");
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    
+    if (showInput) {
+        inputContainer.classList.remove('hidden');
+        inputEl.value = inputValue;
+        setTimeout(() => inputEl.focus(), 100);
+    } else {
+        inputContainer.classList.add('hidden');
+    }
+
+    cancelBtn.classList.toggle('hidden', !showCancel);
+
+    modal.classList.add('opacity-100');
+    modal.classList.remove('pointer-events-none');
+    container.classList.remove('scale-95');
+
+    return new Promise((resolve) => {
+        modalResolver = resolve;
+        
+        inputEl.onkeypress = (e) => {
+            if (e.key === 'Enter') handleModalOk();
+        };
+    });
+}
+
+export function handleModalOk() {
+    const inputContainer = document.getElementById('modal-input-container');
+    const inputEl = document.getElementById('modal-input');
+    const isInputVisible = !inputContainer.classList.contains('hidden');
+    
+    const value = isInputVisible ? inputEl.value : true;
+    
+    // Capture and clear resolver BEFORE closing so closeModal doesn't resolve with null
+    const resolver = modalResolver;
+    modalResolver = null;
+    
+    closeModal();
+    
+    if (resolver) resolver(value);
+}
+
+export function closeModal() {
+    const modal = document.getElementById('custom-modal');
+    const container = document.getElementById('modal-container');
+    if (modal) {
+        modal.classList.remove('opacity-100');
+        modal.classList.add('pointer-events-none');
+        container.classList.add('scale-95');
+    }
+    
+    // Resolve with null only if we haven't already resolved (e.g. backdrop/cancel click)
+    const resolver = modalResolver;
+    modalResolver = null;
+    if (resolver) resolver(null);
 }
 
 export function toggleLibrary(e) {
@@ -68,10 +164,185 @@ export function closeLibrary() {
 export function switchTab(tab) {
     document.getElementById('view-interactive').classList.toggle('hidden', tab !== 'interactive');
     document.getElementById('view-novel').classList.toggle('hidden', tab !== 'novel');
+    document.getElementById('view-music').classList.toggle('hidden', tab !== 'music');
+    document.getElementById('view-context').classList.toggle('hidden', tab !== 'context');
+    document.getElementById('view-settings').classList.toggle('hidden', tab !== 'settings');
+    
     document.getElementById('tab-interactive').classList.toggle('tab-active', tab === 'interactive');
-    document.getElementById('tab-interactive').classList.toggle('text-zinc-600', tab !== 'interactive');
+    document.getElementById('tab-interactive').classList.toggle('text-zinc-400', tab !== 'interactive');
+    
     document.getElementById('tab-novel').classList.toggle('tab-active', tab === 'novel');
-    document.getElementById('tab-novel').classList.toggle('text-zinc-600', tab !== 'novel');
+    document.getElementById('tab-novel').classList.toggle('text-zinc-400', tab !== 'novel');
+
+    document.getElementById('tab-music').classList.toggle('tab-active', tab === 'music');
+    document.getElementById('tab-music').classList.toggle('text-zinc-400', tab !== 'music');
+    
+    document.getElementById('tab-context').classList.toggle('tab-active', tab === 'context');
+    document.getElementById('tab-context').classList.toggle('text-zinc-400', tab !== 'context');
+
+    document.getElementById('tab-settings').classList.toggle('tab-active', tab === 'settings');
+    document.getElementById('tab-settings').classList.toggle('text-zinc-400', tab !== 'settings');
+
+    // Visualizer Lifecycle
+    import('./visualizer.js').then(v => {
+        if (tab === 'music') {
+            v.startVisualizer();
+            renderMusicEditor(); // Ensure editor is populated when entering tab
+        } else {
+            v.stopVisualizer();
+        }
+    });
+}
+
+export function switchMusicSubTab(subTab) {
+    const isPlayer = subTab === 'player';
+    document.getElementById('music-player-view').classList.toggle('hidden', !isPlayer);
+    document.getElementById('music-editor-view').classList.toggle('hidden', isPlayer);
+    
+    document.getElementById('subtab-music-player').classList.toggle('border-emerald-500', isPlayer);
+    document.getElementById('subtab-music-player').classList.toggle('text-emerald-500', isPlayer);
+    document.getElementById('subtab-music-player').classList.toggle('border-transparent', !isPlayer);
+    document.getElementById('subtab-music-player').classList.toggle('text-zinc-500', !isPlayer);
+    
+    document.getElementById('subtab-music-editor').classList.toggle('border-emerald-500', !isPlayer);
+    document.getElementById('subtab-music-editor').classList.toggle('text-emerald-500', !isPlayer);
+    document.getElementById('subtab-music-editor').classList.toggle('border-transparent', isPlayer);
+    document.getElementById('subtab-music-editor').classList.toggle('text-zinc-500', isPlayer);
+
+    if (subTab === 'editor') {
+        import('./story.js').then(s => {
+            import('./ui_builder.js').then(uiBuilder => {
+                uiBuilder.UI.inject('daw-mount', 'daw', { music: s.currentStory?.music });
+            });
+        });
+    }
+}
+
+export async function renderMusicEditor(musicData) {
+    const editor = document.getElementById('music-score-editor');
+    if (!editor) return;
+
+    let data = musicData;
+    if (!data) {
+        const storyModule = await import('./story.js');
+        data = storyModule.currentStory?.music;
+    }
+
+    if (data) {
+        editor.value = JSON.stringify(data, null, 2);
+    } else {
+        editor.value = "// No soundtrack composed for this chapter yet.";
+    }
+}
+
+export async function saveMusicEditor() {
+    const editor = document.getElementById('music-score-editor');
+    if (!editor) return;
+
+    try {
+        const musicScore = JSON.parse(editor.value);
+        const storyModule = await import('./story.js');
+        const musicModule = await import('./music.js');
+        
+        if (storyModule.currentStory) {
+            updateStatus('Updating soundtrack...');
+            storyModule.currentStory.music = musicScore;
+            
+            // Save to server
+            await api.updateStory(storyModule.currentStory.id, storyModule.currentStory);
+            
+            // Replay
+            musicModule.playScore(musicScore);
+            
+            updateStatus('Soundtrack updated.');
+            setTimeout(() => updateStatus(''), 2000);
+        }
+    } catch (err) {
+        console.error("Invalid music JSON", err);
+        alert("Invalid JSON format. Please check your syntax.");
+    }
+}
+
+export function updateMusicUI(isPlaying, hasMusic = false) {
+    const btnMain = document.getElementById('btn-play-music');
+    const btnInt = document.getElementById('btn-play-music-interactive');
+    
+    // Show/Hide interactive button based on music availability and play state
+    if (btnInt) {
+        if (hasMusic || isPlaying) {
+            btnInt.classList.remove('hidden');
+            btnInt.classList.add('flex');
+        } else {
+            btnInt.classList.remove('flex');
+            btnInt.classList.add('hidden');
+        }
+
+        const icon = btnInt.querySelector('svg');
+        const text = btnInt.querySelector('span');
+        if (isPlaying) {
+            if (icon) icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>`;
+            if (text) text.textContent = 'Pause Music';
+        } else {
+            if (icon) icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>`;
+            if (text) text.textContent = 'Play Music';
+        }
+    }
+
+    if (btnMain) {
+        if (isPlaying) {
+            btnMain.innerHTML = `<svg class="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+        } else {
+            btnMain.innerHTML = `<svg class="w-6 h-6 text-zinc-400 group-hover:text-emerald-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path></svg>`;
+        }
+    }
+}
+
+export function updateMusicStatus(score) {
+    const title = document.getElementById('music-track-title');
+    const info = document.getElementById('music-track-info');
+    if (title && info) {
+        title.textContent = "Original Soundtrack";
+        info.textContent = `${score.bpm} BPM • ${score.tracks.length} Tracks • Multi-layered arrangement`;
+    }
+}
+
+export function updateChapterSelection(config) {
+    const container = document.getElementById('chapter-selection');
+    const options = document.getElementById('chapter-options');
+    const display = document.getElementById('current-chapter-display');
+    if (!container || !options || !display) return;
+
+    if (!config || !config.chapters || config.chapters.length === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    const formatChapterName = (name) => {
+        const raw = name.replace('chapter-', '');
+        if (/^\d+$/.test(raw)) return `Chapter ${raw}`;
+        return raw.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    };
+
+    container.classList.remove('hidden');
+    display.textContent = formatChapterName(config.currentChapter || 'chapter-1');
+    options.innerHTML = '';
+    
+    config.chapters.forEach(ch => {
+        const btn = document.createElement('button');
+        const chName = formatChapterName(ch);
+        const isSelected = ch === config.currentChapter;
+        
+        btn.className = `w-full text-left px-4 py-2 text-[10px] uppercase tracking-widest hover:bg-zinc-800 transition-colors ${isSelected ? 'text-emerald-500 font-bold' : 'text-zinc-400'}`;
+        btn.textContent = chName;
+        
+        btn.onclick = () => {
+            import('./story.js').then(story => {
+                story.switchChapter(ch);
+                closeChapterDropdown();
+            });
+        };
+        options.appendChild(btn);
+    });
 }
 
 export function applyMood(mood, theme) {
@@ -135,6 +406,91 @@ function escapeHtml(text) {
 export function updateStatus(msg) {
     const el = document.getElementById('status-msg');
     if (el) el.textContent = msg;
+}
+
+// --- CUSTOM DROPDOWNS ---
+
+export function toggleModelDropdown(e) {
+    if (e) e.stopPropagation();
+    const options = document.getElementById('model-options');
+    const icon = document.getElementById('model-dropdown-icon');
+    
+    const isOpen = !options.classList.contains('pointer-events-none');
+    
+    if (isOpen) {
+        closeModelDropdown();
+    } else {
+        options.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
+        if (icon) icon.classList.add('rotate-180');
+        
+        // Close on outside click
+        const closeHandler = () => {
+            closeModelDropdown();
+            document.removeEventListener('click', closeHandler);
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+}
+
+export function closeModelDropdown() {
+    const options = document.getElementById('model-options');
+    const icon = document.getElementById('model-dropdown-icon');
+    if (options) {
+        options.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
+    }
+    if (icon) icon.classList.remove('rotate-180');
+}
+
+export function toggleChapterDropdown(e) {
+    if (e) e.stopPropagation();
+    const options = document.getElementById('chapter-options');
+    const icon = document.getElementById('chapter-dropdown-icon');
+    
+    const isOpen = !options.classList.contains('pointer-events-none');
+    
+    if (isOpen) {
+        closeChapterDropdown();
+    } else {
+        options.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
+        if (icon) icon.classList.add('rotate-180');
+        
+        // Close on outside click
+        const closeHandler = () => {
+            closeChapterDropdown();
+            document.removeEventListener('click', closeHandler);
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
+}
+
+export function closeChapterDropdown() {
+    const options = document.getElementById('chapter-options');
+    const icon = document.getElementById('chapter-dropdown-icon');
+    if (options) {
+        options.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
+    }
+    if (icon) icon.classList.remove('rotate-180');
+}
+
+export function populateModelDropdown(models, currentModel, onSelect) {
+    const options = document.getElementById('model-options');
+    const display = document.getElementById('current-model-display');
+    if (!options || !display) return;
+
+    display.textContent = currentModel || 'Select Model';
+    options.innerHTML = '';
+
+    models.forEach(m => {
+        const btn = document.createElement('button');
+        btn.className = `w-full text-left px-4 py-2 text-[10px] uppercase tracking-widest hover:bg-zinc-800 transition-colors ${m.name === currentModel ? 'text-emerald-500 font-bold' : 'text-zinc-400'}`;
+        btn.textContent = m.name;
+        btn.onclick = () => {
+            display.textContent = m.name;
+            onSelect(m.name);
+            closeModelDropdown();
+        };
+        options.appendChild(btn);
+    });
 }
 
 export function updatePresence(presenceList) {

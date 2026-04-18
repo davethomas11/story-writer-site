@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#09090b"/>
+  <path d="M10 8h12a2 2 0 0 1 2 2v16H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" fill="#10b981" fill-opacity="0.15"/>
+  <path d="M10 8h12a2 2 0 0 1 2 2v16H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z" stroke="#10b981" stroke-width="1.5" fill="none"/>
+  <line x1="12" y1="13" x2="20" y2="13" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="12" y1="17" x2="20" y2="17" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="12" y1="21" x2="16" y2="21" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+  <circle cx="24" cy="8" r="3" fill="#10b981">
+    <animate attributeName="opacity" values="1;0.4;1" dur="3s" repeatCount="indefinite" />
+  </circle>
+</svg>

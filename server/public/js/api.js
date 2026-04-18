@@ -1,4 +1,5 @@
 import { API_BASE } from './config.js';
+export { API_BASE };
 
 export let userId = localStorage.getItem('story_scribe_user_id');
 export let username = localStorage.getItem('story_scribe_username') || 'Explorer';
@@ -104,6 +105,74 @@ export async function deleteStory(id) {
     return await res.json();
 }
 
+// --- CHAPTER MANAGEMENT ---
+
+export async function createChapter(storyId) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/chapters`, {
+        method: 'POST'
+    });
+    if (!res.ok) throw new Error('Failed to create chapter');
+    return await res.json();
+}
+
+export async function switchChapter(storyId, chapterName) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/chapters/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chapterName })
+    });
+    if (!res.ok) throw new Error('Failed to switch chapter');
+    return await res.json();
+}
+
+export async function renameChapter(storyId, oldName, newName) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/chapters/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName })
+    });
+    if (!res.ok) throw new Error('Failed to rename chapter');
+    return await res.json();
+}
+
+export async function recomposeChapter(storyId, model, perspective) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/chapters/recompose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, perspective })
+    });
+    if (!res.ok) throw new Error('Failed to recompose chapter');
+    return await res.json();
+}
+
+// --- STORY CONTEXT ---
+
+export async function fetchStoryContext(storyId) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/context`);
+    if (!res.ok) throw new Error('Failed to fetch story context');
+    return await res.json();
+}
+
+export async function saveStoryContext(storyId, context) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context })
+    });
+    if (!res.ok) throw new Error('Failed to save story context');
+    return await res.json();
+}
+
+export async function generateStoryContext(storyId, model, category = null) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/context/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, category })
+    });
+    if (!res.ok) throw new Error('Failed to generate story context');
+    return await res.json();
+}
+
 export async function callChat(model, messages, stream = false) {
     const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
@@ -111,6 +180,19 @@ export async function callChat(model, messages, stream = false) {
         body: JSON.stringify({ model, messages, stream })
     });
     if (!res.ok) throw new Error('Ollama connection failed');
+    return res;
+}
+
+export async function storyChat(id, model, action, stream = true) {
+    const res = await fetch(`${API_BASE}/stories/${id}/chat`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Id': userId
+        },
+        body: JSON.stringify({ model, action, stream })
+    });
+    if (!res.ok) throw new Error('AI connection failed');
     return res;
 }
 
@@ -152,4 +234,14 @@ export async function callGenerate(model, prompt) {
     if (!res.ok) throw new Error('Ollama connection failed');
     const data = await res.json();
     return data.response;
+}
+
+export async function generateMusic(storyId, model, mood, summary) {
+    const res = await fetch(`${API_BASE}/stories/${storyId}/music/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, mood, summary })
+    });
+    if (!res.ok) throw new Error('Failed to generate music');
+    return await res.json();
 }

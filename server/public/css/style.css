@@ -4,7 +4,7 @@
     --bg-surface: rgba(9, 9, 11, 0.7);
     --text-primary: #f4f4f5;
     --text-secondary: #a1a1aa;
-    --text-dim: #52525b;
+    --text-dim: #71717a;
     --accent: #52525b;
     --accent-glow: rgba(82, 82, 91, 0.3);
     
@@ -55,7 +55,8 @@ body, #main-container, body.mood-default, body.mood-eerie, body.mood-serene, bod
 /* The Glass Surface Pattern: Ensures text is ALWAYS readable regardless of mood background */
 #view-interactive, #view-novel {
     position: relative;
-    background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, var(--bg-base) 100%);
+    /* Stronger center darkening to ensure readability against any mood background */
+    background: radial-gradient(circle at center, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 70%, transparent 100%);
 }
 
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -67,8 +68,8 @@ p {
     line-height: var(--line-height-prose);
     margin-bottom: 1.5rem;
     color: var(--text-primary);
-    /* Subtle shadow improves readability on colored backgrounds */
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    /* Stronger shadow for readability on light/colored backgrounds */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
     font-size: 1.125rem;
     font-weight: 350; /* Slightly heavier than light for better rendering on dark */
 }
@@ -249,4 +250,24 @@ p {
         flex-wrap: wrap;
         gap: 0.5rem !important;
     }
+}
+
+/* DAW Styles */
+.daw-column-highlight {
+    background-color: rgba(16, 185, 129, 0.08) !important;
+    border-left-color: rgba(16, 185, 129, 0.4) !important;
+    box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+.daw-note {
+    transition: box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.daw-note:hover {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+    background-color: #34d399 !important; /* Brighter emerald on hover */
+}
+
+#daw-grid > div {
+    min-height: 24px;
 }

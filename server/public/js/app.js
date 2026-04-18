@@ -1,16 +1,28 @@
+// Global exports for inline HTML handlers
+window.app = window.app || {};
+
 import * as api from './api.js';
 import * as ui from './ui.js';
 import * as story from './story.js';
 import { initWebSocket } from './websocket.js';
+import * as music from './music.js';
+import { settings, updateSetting, loadSettingsToUI } from './settings.js';
+import { UI } from './ui_builder.js';
+import './daw.js';
 
-// Global exports for inline HTML handlers
-window.app = {
+Object.assign(window.app, {
     toggleLibrary: ui.toggleLibrary,
     closeLibrary: ui.closeLibrary,
     toggleDebug: ui.toggleDebug,
     switchTab: (tab) => {
         ui.switchTab(tab);
         if (tab === 'novel') story.renderStory();
+        if (tab === 'context') story.renderStoryContext();
+        if (tab === 'music') {
+            import('./story.js').then(s => {
+                UI.inject('daw-mount', 'daw', { music: s.currentStory?.music });
+            });
+        }
         
         // Update URL state
         const url = new URL(window.location);
@@ -19,12 +31,22 @@ window.app = {
     },
     createNewStory: story.createNewStory,
     renameStory: story.renameStory,
+    switchChapter: story.switchChapter,
+    renameChapter: story.renameChapter,
+    createNewChapter: story.createNewChapter,
+    recomposeChapter: story.recomposeChapter,
+    saveStoryContext: story.saveStoryContext,
+    generateStoryContext: story.generateStoryContext,
     selectStory: story.selectStory,
     deleteStory: story.deleteStory,
     handleAction: story.handleAction,
     editProfile: ui.editProfile,
     togglePresence: ui.togglePresence,
     togglePresenceModal: ui.togglePresenceModal,
+    closeModal: ui.closeModal,
+    handleModalOk: ui.handleModalOk,
+    toggleModelDropdown: ui.toggleModelDropdown,
+    toggleChapterDropdown: ui.toggleChapterDropdown,
     showStats: async () => {
         try {
             const stats = await api.fetchStats();
@@ -38,12 +60,25 @@ window.app = {
     switchNovelPerspective: (mode) => {
         story.setNovelPerspective(mode);
         document.getElementById('btn-1st-person').classList.toggle('perspective-active', mode === '1st');
-        document.getElementById('btn-1st-person').classList.toggle('text-zinc-600', mode !== '1st');
+        document.getElementById('btn-1st-person').classList.toggle('text-zinc-400', mode !== '1st');
         document.getElementById('btn-3rd-person').classList.toggle('perspective-active', mode === '3rd');
-        document.getElementById('btn-3rd-person').classList.toggle('text-zinc-600', mode !== '3rd');
+        document.getElementById('btn-3rd-person').classList.toggle('text-zinc-400', mode !== '3rd');
         story.renderStory();
-    }
-};
+    },
+    // Music Engine methods
+    toggleMusic: music.toggleMusic,
+    regenerateMusic: () => {
+        if (story.currentStory) {
+            const mood = story.currentStory.currentMood || 'default';
+            // We'll use the last summary as prompt context
+            const summaryText = story.currentStory.summary?.plotPoints?.join(' ') || 'A new adventure begins.';
+            music.generateNewMusic(story.currentStory.id, mood, summaryText);
+        }
+    },
+    switchMusicSubTab: ui.switchMusicSubTab,
+    saveMusicEditor: ui.saveMusicEditor,
+    updateSetting: updateSetting
+});
 
 // Initialize WebSocket connection
 initWebSocket();
@@ -76,10 +111,7 @@ async function initApp() {
     try {
         const data = await api.fetchModels();
         const models = data.models || [];
-        const select = document.getElementById('model-select');
         
-        select.innerHTML = '';
-
         const llamaModels = models
             .filter(m => m.name.toLowerCase().includes('llama'))
             .sort((a, b) => b.name.localeCompare(a.name));
@@ -92,20 +124,14 @@ async function initApp() {
             defaultModel = models[0].name;
         }
 
-        models.forEach((m, i) => {
-            const opt = document.createElement('option');
-            opt.value = m.name; opt.textContent = m.name;
-            select.appendChild(opt);
-            if (m.name === defaultModel) {
-                opt.selected = true;
-            }
-        });
-
         if (defaultModel) {
             story.setSelectedModel(defaultModel);
         }
 
-        select.addEventListener('change', (e) => story.setSelectedModel(e.target.value));
+        ui.populateModelDropdown(models, defaultModel, (val) => {
+            story.setSelectedModel(val);
+        });
+
         if (health && health.ollama === 'ok') {
             ui.updateConnectionStatus('Ready', true);
         }
@@ -132,6 +158,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initial UI state
     ui.applyMood('default');
     api.setUsername(api.username); // Set initial button text
+    loadSettingsToUI();
+    
+    // Initialize Visualizer
+    const visualizerCanvas = document.getElementById('music-visualizer');
+    if (visualizerCanvas) {
+        import('./visualizer.js').then(v => {
+            v.initVisualizer(visualizerCanvas, music.analyser);
+        });
+    }
     
     // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -142,4 +177,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Start initialization process
     initApp();
+
+    // Browser Auto-play workaround: Resume AudioContext on first interaction
+    const resumeAudio = () => {
+        if (settings.musicEnabled && !music.isStarted) {
+            music.startEngine();
+        }
+        document.removeEventListener('click', resumeAudio);
+        document.removeEventListener('keydown', resumeAudio);
+    };
+    document.addEventListener('click', resumeAudio);
+    document.addEventListener('keydown', resumeAudio);
 });

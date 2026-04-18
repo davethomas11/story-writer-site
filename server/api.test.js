@@ -134,15 +134,17 @@ describe('API Endpoints', () => {
     const STORIES_DIR = path.join(__dirname, 'stories');
 
     afterAll(() => {
+      // Cleanup is harder with folders, but we can try to find and delete
       if (createdStoryId) {
-        const jsonPath = path.join(STORIES_DIR, `${createdStoryId}.json`);
-        const mdPath = path.join(STORIES_DIR, `${createdStoryId}.md`);
-        if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
-        if (fs.existsSync(mdPath)) fs.unlinkSync(mdPath);
+        const folders = fs.readdirSync(STORIES_DIR);
+        const folder = folders.find(f => f.endsWith(createdStoryId));
+        if (folder) {
+          fs.rmSync(path.join(STORIES_DIR, folder), { recursive: true, force: true });
+        }
       }
     });
 
-    test('POST /api/stories should create a new story', async () => {
+    test('POST /api/stories should create a new story folder', async () => {
       const response = await request(server)
         .post('/api/stories')
         .send({ title: 'Test Adventure' });
@@ -151,6 +153,11 @@ describe('API Endpoints', () => {
       expect(response.body.title).toBe('Test Adventure');
       expect(response.body).toHaveProperty('id');
       createdStoryId = response.body.id;
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(createdStoryId));
+      expect(folder).toBeDefined();
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'config.json'))).toBe(true);
     });
 
     test('GET /api/stories should list stories', async () => {
@@ -160,38 +167,114 @@ describe('API Endpoints', () => {
       expect(response.body.some(s => s.id === createdStoryId)).toBe(true);
     });
 
-    test('GET /api/stories/:id should return story details', async () => {
+    test('GET /api/stories/:id should return story details from folder', async () => {
       const response = await request(server).get(`/api/stories/${createdStoryId}`);
       expect(response.status).toBe(200);
       expect(response.body.story.id).toBe(createdStoryId);
       expect(response.body).toHaveProperty('hash');
     });
 
-    test('PUT /api/stories/:id should update story', async () => {
+    test('PUT /api/stories/:id should update story files', async () => {
       const updatedData = { 
         id: createdStoryId, 
         title: 'Updated Title',
-        novel: 'Once upon a time...'
+        novel: 'Once upon a time...',
+        interactive: [],
+        messages: [],
+        summary: {}
       };
       const response = await request(server)
         .put(`/api/stories/${createdStoryId}`)
         .send(updatedData);
       
       expect(response.status).toBe(200);
-      expect(response.body.story.title).toBe('Updated Title');
       
-      // Verify MD file was updated
-      const mdContent = fs.readFileSync(path.join(STORIES_DIR, `${createdStoryId}.md`), 'utf8');
+      // Verify MD file was updated inside chapter
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(createdStoryId));
+      const novelPath = path.join(STORIES_DIR, folder, 'chapter-1', 'novel.md');
+      const mdContent = fs.readFileSync(novelPath, 'utf8');
       expect(mdContent).toBe('Once upon a time...');
     });
 
-    test('DELETE /api/stories/:id should remove story', async () => {
+    test('DELETE /api/stories/:id should archive story', async () => {
       const response = await request(server).delete(`/api/stories/${createdStoryId}`);
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       
-      expect(fs.existsSync(path.join(STORIES_DIR, `${createdStoryId}.json`))).toBe(false);
-      createdStoryId = null; // Prevent afterAll from failing
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(createdStoryId));
+      expect(folder).toBeUndefined(); // Should be moved to archive
+      createdStoryId = null;
+    });
+  });
+
+  describe('Chapter Management', () => {
+    let storyId;
+    const STORIES_DIR = path.join(__dirname, 'stories');
+
+    beforeAll(async () => {
+      const response = await request(server)
+        .post('/api/stories')
+        .send({ title: 'Chapter Test' });
+      storyId = response.body.id;
+    });
+
+    afterAll(() => {
+      if (storyId) {
+        const folders = fs.readdirSync(STORIES_DIR);
+        const folder = folders.find(f => f.endsWith(storyId));
+        if (folder) {
+          fs.rmSync(path.join(STORIES_DIR, folder), { recursive: true, force: true });
+        }
+      }
+    });
+
+    test('POST /api/stories/:id/chapters should create a new chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters`);
+      
+      expect(response.status).toBe(201);
+      expect(response.body.chapter).toBe('chapter-2');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-2'))).toBe(true);
+    });
+
+    test('POST /api/stories/:id/chapters/rename should rename a chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters/rename`)
+        .send({ oldName: 'chapter-1', newName: 'chapter-intro' });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.newName).toBe('chapter-intro');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-intro'))).toBe(true);
+      expect(fs.existsSync(path.join(STORIES_DIR, folder, 'chapter-1'))).toBe(false);
+
+      // Verify config.json was updated
+      const config = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, folder, 'config.json'), 'utf8'));
+      expect(config.chapters).toContain('chapter-intro');
+      expect(config.chapters).not.toContain('chapter-1');
+    });
+
+    test('POST /api/stories/:id/chapters/switch should update current chapter', async () => {
+      const response = await request(server)
+        .post(`/api/stories/${storyId}/chapters/switch`)
+        .send({ chapterName: 'chapter-2' });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.currentChapter).toBe('chapter-2');
+
+      const folders = fs.readdirSync(STORIES_DIR);
+      const folder = folders.find(f => f.endsWith(storyId));
+      const config = JSON.parse(fs.readFileSync(path.join(STORIES_DIR, folder, 'config.json'), 'utf8'));
+      expect(config.currentChapter).toBe('chapter-2');
     });
   });
 
